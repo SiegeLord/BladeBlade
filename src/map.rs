@@ -77,7 +77,7 @@ fn get_ground_from_screen(
 	let start = camera_inv * near_unprojected;
 	let end = camera_inv * far_unprojected;
 
-	let dir = (end - start);
+	let dir = end - start;
 	let f = (-start.y) / dir.y;
 	start + f * dir
 }
@@ -104,9 +104,8 @@ impl Map
 			.core
 			.use_projection_transform(&mat4_to_transform(project.into_inner()));
 
-		let theta = -std::f32::consts::PI / 3.;
 		let height = 300.;
-		let camera = camera_project(player_pos.x, height, player_pos.z + 150., player_pos.z);
+		let camera = camera_project(player_pos.x, height, player_pos.z + height / 2., player_pos.z);
 
 		state
 			.core
@@ -136,7 +135,6 @@ impl Map
 				let shift_x = x as f32 * dx;
 				let shift_y = (x % 2) as f32 * dx2 + y as f32 * dy;
 
-				let f = 1. + 0.5 * (state.tick as f32 / 10.).sin();
 				let f = y as f32 / 10.;
 
 				let vertex = vertex1.interpolate(&vertex2, f);
