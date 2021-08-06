@@ -14,6 +14,35 @@ pub const GRAVITY: f32 = 100.;
 pub type Vec2D = nalgebra::Vector2<f32>;
 pub type Vec3D = nalgebra::Vector3<f32>;
 
+use na::{Isometry3, Matrix4, Point3, Quaternion, RealField, Rotation3, Unit, Vector3, Vector4};
+use nalgebra as na;
+
+pub fn projection_transform(dw: f32, dh: f32) -> Matrix4<f32>
+{
+	Matrix4::new_perspective(dw / dh, f32::pi() / 2., 0.1, 2000.)
+}
+
+pub fn mat4_to_transform(mat: Matrix4<f32>) -> Transform
+{
+	let mut trans = Transform::identity();
+	for i in 0..4
+	{
+		for j in 0..4
+		{
+			trans.get_matrix_mut()[j][i] = mat[(i, j)];
+		}
+	}
+	trans
+}
+
+pub fn camera_project(x: f32, y: f32, z: f32, dir: f32) -> Matrix4<f32>
+{
+	let trans = Matrix4::new_translation(&Vector3::new(-x, -y, -z));
+	let rot = Matrix4::from_axis_angle(&Unit::new_normalize(Vector3::new(1., 0., 0.)), -dir);
+
+	rot * trans
+}
+
 pub fn max<T: PartialOrd>(x: T, y: T) -> T
 {
 	if x > y
