@@ -1,7 +1,9 @@
 use crate::error::{Error, Result};
 use allegro::*;
 use allegro_audio::*;
+use allegro_color::*;
 use nalgebra;
+use rand::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use slr_config::{from_element, to_element, ConfigElement, Source};
@@ -44,6 +46,54 @@ pub fn camera_project(x: f32, y: f32, z: f32, player_z: f32) -> Isometry3<f32>
 	let target = Point3::new(x, 0., player_z);
 	let view = Isometry3::look_at_rh(&eye, &target, &Vector3::y());
 	view
+}
+
+pub fn random_color(seed: u64) -> Color
+{
+	let mut rng = StdRng::seed_from_u64(seed);
+	Color::from_hsv(rng.gen_range(0. ..360.), 1., 1.)
+}
+
+pub trait ColorExt
+{
+	fn interpolate(&self, other: Color, f: f32) -> Color;
+}
+
+impl ColorExt for Color
+{
+	fn interpolate(&self, other: Color, f: f32) -> Color
+	{
+		let fi = 1. - f;
+		let (r, g, b, a) = self.to_rgba_f();
+		let (or, og, ob, oa) = other.to_rgba_f();
+		Color::from_rgba_f(
+			r * fi + or * f,
+			g * fi + og * f,
+			b * fi + ob * f,
+			a * fi + oa * f,
+		)
+	}
+}
+
+/// x/y need to be in [-1, 1]
+pub fn get_ground_from_screen(
+	x: f32, y: f32, project: Perspective3<f32>, camera: Isometry3<f32>,
+) -> Point3<f32>
+{
+	let near_point = Point3::new(x, y, -1.);
+	let far_point = Point3::new(x, y, 1.);
+
+	let near_unprojected = project.unproject_point(&near_point);
+	let far_unprojected = project.unproject_point(&far_point);
+
+	let camera_inv = camera.inverse();
+
+	let start = camera_inv * near_unprojected;
+	let end = camera_inv * far_unprojected;
+
+	let dir = end - start;
+	let f = (-start.y) / dir.y;
+	start + f * dir
 }
 
 pub fn max<T: PartialOrd>(x: T, y: T) -> T

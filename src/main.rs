@@ -41,6 +41,11 @@ fn real_main() -> Result<()>
 		state.core.set_new_display_flags(FULLSCREEN_WINDOW);
 	}
 
+	state.core.set_new_display_option(
+		DisplayOption::DepthSize,
+		16,
+		DisplayOptionImportance::Suggest,
+	);
 	let display = Display::new(&state.core, options.width, options.height)
 		.map_err(|_| "Couldn't create display".to_string())?;
 
@@ -67,7 +72,7 @@ fn real_main() -> Result<()>
 	let mut quit = false;
 	let mut draw = true;
 
-	let map = map::Map::new();
+	let mut map = map::Map::new(display.get_width() as f32, display.get_height() as f32);
 
 	timer.start();
 	while !quit
@@ -77,20 +82,20 @@ fn real_main() -> Result<()>
 			let start = state.core.get_time();
 			state.core.set_target_bitmap(Some(display.get_backbuffer()));
 			state.core.clear_to_color(Color::from_rgb_f(0., 0., 0.2));
+			state.core.clear_depth_buffer(1.);
 
-			map.draw(
-				&state,
-				Vec3D::new(0., 0., 0. + state.tick as f32 * 1.),
-				display.get_width() as f32,
-				display.get_height() as f32,
-			);
+			map.draw(&state);
 
 			state.core.flip_display();
 			let end = state.core.get_time();
-			println!("{}", 1. / (end - start));
+			if state.tick % 200 == 0
+			{
+				println!("{}", 1. / (end - start));
+			}
 		}
 
 		let event = queue.wait_for_event();
+		map.input(&event, &mut state)?;
 		match event
 		{
 			Event::DisplayClose { .. } => quit = true,
@@ -99,8 +104,10 @@ fn real_main() -> Result<()>
 				//~ let start = state.core.get_time();
 				//~ let end = state.core.get_time();
 				//~ println!("{}", 1. / (end - start));
-				state.tick += 1;
+				map.logic(&mut state)?;
 				state.sfx.update_sounds()?;
+
+				state.tick += 1;
 				draw = true;
 			}
 			_ => (),
