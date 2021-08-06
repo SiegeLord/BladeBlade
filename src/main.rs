@@ -11,7 +11,7 @@ mod sprite;
 mod utils;
 
 use crate::error::Result;
-use crate::utils::{load_config, world_to_screen, Vec2D, DT};
+use crate::utils::{load_config, world_to_screen, Vec3D, DT};
 use allegro::*;
 use allegro_dialog::*;
 use serde_derive::{Deserialize, Serialize};
@@ -80,6 +80,7 @@ fn real_main() -> Result<()>
 
 			map.draw(
 				&state,
+				Vec3D::new(0., 0., 0. + state.tick as f32 * 1.),
 				display.get_width() as f32,
 				display.get_height() as f32,
 			);
