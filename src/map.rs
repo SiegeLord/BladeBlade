@@ -15,22 +15,25 @@ use rand::prelude::*;
 
 static CELL_SIZE: i32 = 2048;
 static CELL_RADIUS: i32 = 2;
+static SUPER_GRID: i32 = 8;
+static VERTEX_RADIUS: f32 = 64.;
 
 #[derive(Clone)]
 pub struct Cell
 {
 	center: Point2<i32>,
+	vertices: Vec<GridVertex>,
 }
 
 impl Cell
 {
 	fn new(center: Point2<i32>, world: &mut hecs::World) -> Self
 	{
+		let mut rng = thread_rng();
 		let world_center =
 			Point2::new((center.x * CELL_SIZE) as f32, (center.y * CELL_SIZE) as f32);
 		if center.x != 0 || center.y != 0
 		{
-			let mut rng = thread_rng();
 			let w = CELL_SIZE as f32 / 2. - 100.;
 
 			for _ in 0..3
@@ -74,7 +77,23 @@ impl Cell
 			}
 		}
 
-		Self { center: center }
+		let num_vertices = (CELL_SIZE as f32 / VERTEX_RADIUS) as i32 / SUPER_GRID;
+		let mut vertices = vec![];
+
+		for y in -num_vertices..num_vertices + 1
+		{
+			for x in -num_vertices..num_vertices + 1
+			{
+				let seed = (x + center.x * num_vertices * 2)
+					+ (num_vertices * num_vertices) * (y + center.y * num_vertices * 2);
+				vertices.push(GridVertex::new(seed as u64));
+			}
+		}
+
+		Self {
+			center: center,
+			vertices: vertices,
+		}
 	}
 
 	pub fn world_center(&self) -> Point3<f32>
@@ -91,12 +110,45 @@ impl Cell
 		let sz = CELL_SIZE as f32;
 		let x = pos.x + sz / 2.;
 		let y = pos.z + sz / 2.;
-		Point2::new((x / sz) as i32, (y / sz) as i32)
+		Point2::new((x / sz).floor() as i32, (y / sz).floor() as i32)
 	}
 
 	pub fn contains(&self, pos: &Point3<f32>) -> bool
 	{
 		self.center == Cell::world_to_cell(pos)
+	}
+
+	pub fn get_vertex(&self, pos: &Point3<f32>) -> Option<GridVertex>
+	{
+		let num_vertices = (2. * CELL_SIZE as f32 / VERTEX_RADIUS) as i32 / SUPER_GRID + 1;
+		let disp = pos - self.world_center();
+
+		let super_radius = VERTEX_RADIUS * SUPER_GRID as f32;
+
+		let x = ((disp.x + CELL_SIZE as f32 / 2.) / super_radius) as i32;
+		let y = ((disp.z + CELL_SIZE as f32 / 2.) / super_radius) as i32;
+		if x < 0 || x >= num_vertices - 1 || y < 0 || y >= num_vertices - 1
+		{
+			None
+		}
+		else
+		{
+			let fx = ((disp.x + CELL_SIZE as f32 / 2.) - x as f32 * super_radius) / super_radius;
+			let fy = ((disp.z + CELL_SIZE as f32 / 2.) - y as f32 * super_radius) / super_radius;
+
+			//~ dbg!(x, y, super_radius, num_vertices);
+			let vertex1 = &self.vertices[(y * num_vertices + x) as usize];
+			let vertex2 = &self.vertices[(y * num_vertices + x + 1) as usize];
+			let vertex3 = &self.vertices[((y + 1) * num_vertices + x) as usize];
+			let vertex4 = &self.vertices[((y + 1) * num_vertices + x + 1) as usize];
+
+			let vertex12 = vertex1.interpolate(&vertex2, fx);
+			let vertex34 = vertex3.interpolate(&vertex4, fx);
+			let vertex = vertex12.interpolate(&vertex34, fy);
+
+			//~ println!("Good!");
+			Some(vertex)
+		}
 	}
 }
 
@@ -296,9 +348,10 @@ pub struct Health
 }
 
 #[derive(Debug, Clone)]
-struct GridVertex
+pub struct GridVertex
 {
 	branches: [Vec<(f32, f32, f32)>; 3],
+	color: Color,
 }
 
 impl GridVertex
@@ -314,8 +367,8 @@ impl GridVertex
 			let theta = 2. * std::f32::consts::PI * i as f32 / 3.;
 			for j in 0..5
 			{
-				let mut x = j as f32 * 10. * theta.cos();
-				let mut z = j as f32 * 10. * theta.sin();
+				let mut x = j as f32 * VERTEX_RADIUS * theta.cos() / 4.;
+				let mut z = j as f32 * VERTEX_RADIUS * theta.sin() / 4.;
 				let mut y = 0.;
 				if j != 0 && j != 4
 				{
@@ -327,7 +380,10 @@ impl GridVertex
 			}
 		}
 
-		Self { branches: branches }
+		Self {
+			branches: branches,
+			color: random_color(rng.gen_range(0..16000), 1., 0.5),
+		}
 	}
 
 	pub fn interpolate(&self, other: &Self, f: f32) -> Self
@@ -345,6 +401,7 @@ impl GridVertex
 				vn.2 = v1.2 * (1. - f) + v2.2 * f;
 			}
 		}
+		new.color = self.color.interpolate(other.color, f);
 		new
 	}
 }
@@ -870,9 +927,9 @@ impl Map
 		let c = theta.cos();
 		let s = theta.sin();
 
-		let dx = 40. * c + 40.;
-		let dy = 40. * s + 40. * s;
-		let dx2 = 40. * s;
+		let dx = VERTEX_RADIUS * c + VERTEX_RADIUS;
+		let dy = VERTEX_RADIUS * s + VERTEX_RADIUS * s;
+		let dx2 = VERTEX_RADIUS * s;
 
 		let top_left = get_ground_from_screen(-1., 1., self.project, camera);
 		let bottom_left = get_ground_from_screen(-1., -1., self.project, camera);
@@ -890,32 +947,36 @@ impl Map
 				let shift_x = x as f32 * dx;
 				let shift_y = (x % 2) as f32 * dx2 + y as f32 * dy;
 
-				let rate = 5;
-				//~ let fx = (x % rate) as f32 / (rate - 1) as f32;
-				//~ let fy = (y % rate) as f32 / (rate - 1) as f32;
+				//~ let rate = 8;
+				//~ let fx = (x % rate) as f32 / rate as f32;
+				//~ let fy = (y % rate) as f32 / rate as f32;
 
-				let seed1 = (x / rate + 10000 * (y / rate)).abs() as u64;
+				//~ let seed1 = (x / rate + 10000 * (y / rate)).abs() as u64;
 				//~ let seed2 = (x / rate + 1 + 10000 * (y / rate)).abs() as u64;
 				//~ let seed3 = (x / rate + 10000 * (y / rate + 1)).abs() as u64;
 				//~ let seed4 = (x / rate + 1 + 10000 * (y / rate + 1)).abs() as u64;
 
-				let vertex1 = GridVertex::new(seed1);
+				//~ let vertex1 = GridVertex::new(seed1);
 				//~ let vertex2 = GridVertex::new(seed2);
 				//~ let vertex3 = GridVertex::new(seed3);
 				//~ let vertex4 = GridVertex::new(seed4);
 
-				let c1 = random_color(seed1, 0.5, 0.5);
-				//~ let c2 = random_color(seed2);
-				//~ let c3 = random_color(seed3);
-				//~ let c4 = random_color(seed4);
-
-				//~ let c12 = c1.interpolate(c2, fx);
-				//~ let c34 = c3.interpolate(c4, fx);
-				let c = c1; //c12.interpolate(c34, fy);
+				// This is dumb.
+				let mut vertex = None;
+				for cell in &self.cells
+				{
+					let point = Point3::new(shift_x, 0., shift_y);
+					if cell.contains(&point)
+					{
+						vertex = cell.get_vertex(&point);
+					}
+				}
+				let vertex = vertex.unwrap();
 
 				//~ let vertex12 = vertex1.interpolate(&vertex2, fx);
 				//~ let vertex34 = vertex3.interpolate(&vertex4, fx);
-				let vertex = vertex1; //vertex12.interpolate(&vertex34, fy);
+				//~ let vertex = vertex12.interpolate(&vertex34, fy);
+				//~ let vertex = vertex1;
 
 				for branch in &vertex.branches
 				{
@@ -929,7 +990,7 @@ impl Map
 								z: z + shift_y,
 								u: 0.,
 								v: 0.,
-								color: c,
+								color: vertex.color,
 							})
 						}
 					}
