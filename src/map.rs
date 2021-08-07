@@ -80,6 +80,7 @@ pub enum DrawKind
 	Player,
 	Enemy,
 	Bullet,
+	Hit,
 }
 
 #[derive(Clone)]
@@ -97,6 +98,67 @@ pub struct Stats
 	pub size: f32,
 	pub cast_delay: f32,
 	pub skill_duration: f32,
+	pub area_of_effect: f32,
+	pub spell_damage: f32,
+}
+
+impl Stats
+{
+	fn player_stats() -> Self
+	{
+		Self {
+			speed: 200.,
+			aggro_range: 100.,
+			close_enough_range: 0.,
+			size: 20.,
+			cast_delay: 0.5,
+			skill_duration: 1.,
+			area_of_effect: 100.,
+			spell_damage: 10.,
+		}
+	}
+
+	fn enemy_stats() -> Self
+	{
+		Self {
+			speed: 100.,
+			aggro_range: 400.,
+			close_enough_range: 300.,
+			size: 20.,
+			cast_delay: 0.5,
+			skill_duration: 1.,
+			area_of_effect: 100.,
+			spell_damage: 1.,
+		}
+	}
+
+	fn bullet_stats() -> Self
+	{
+		Self {
+			speed: 200.,
+			aggro_range: 0.,
+			close_enough_range: 0.,
+			size: 10.,
+			cast_delay: 0.,
+			skill_duration: 0.,
+			area_of_effect: 100.,
+			spell_damage: 1.,
+		}
+	}
+
+	fn hit_stats() -> Self
+	{
+		Self {
+			speed: 0.,
+			aggro_range: 0.,
+			close_enough_range: 0.,
+			size: 40.,
+			cast_delay: 0.,
+			skill_duration: 0.,
+			area_of_effect: 100.,
+			spell_damage: 1.,
+		}
+	}
 }
 
 #[derive(Clone)]
@@ -137,6 +199,13 @@ pub struct BladeBlade
 	num_blades: i32,
 	time_to_fire: f64,
 	time_to_lose_blade: f64,
+	time_to_hit: f64,
+}
+
+#[derive(Clone)]
+pub struct Health
+{
+	health: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -226,19 +295,14 @@ impl Map
 			Collision {
 				kind: CollisionKind::Player,
 			},
-			Stats {
-				speed: 200.,
-				aggro_range: 100.,
-				close_enough_range: 0.,
-				size: 20.,
-				cast_delay: 0.5,
-				skill_duration: 1.,
-			},
+			Stats::player_stats(),
 			BladeBlade {
 				num_blades: 0,
 				time_to_fire: 0.,
 				time_to_lose_blade: 0.,
+				time_to_hit: 0.,
 			},
+			Health { health: 100. },
 		));
 
 		for i in 0..7
@@ -263,18 +327,12 @@ impl Map
 				Collision {
 					kind: CollisionKind::Enemy,
 				},
-				Stats {
-					speed: 100.,
-					aggro_range: 400.,
-					close_enough_range: 300.,
-					size: 20.,
-					cast_delay: 0.5,
-					skill_duration: 1.,
-				},
+				Stats::enemy_stats(),
 				Weapon {
 					time_to_fire: 0.,
 					range: 320.,
 				},
+				Health { health: 100. },
 			));
 		}
 
@@ -460,35 +518,30 @@ impl Map
 						state.time() + enemy.fire_delay as f64 + stats.cast_delay as f64;
 					time_to_move.time_to_move = state.time() + stats.cast_delay as f64;
 
-					new_bullets.push((position.pos, pos));
+					new_bullets.push((position.pos, pos, stats.spell_damage));
 				}
 			}
 		}
 
-		for (start, dest) in new_bullets
+		for (start, dest, spell_damage) in new_bullets
 		{
 			let dir = dest - start;
-			let speed = 200.;
+			let stats = Stats::bullet_stats();
 			self.world.spawn((
-				Bullet { damage: 1. },
+				Bullet {
+					damage: spell_damage,
+				},
 				Position {
 					pos: start,
 					dir: dir.z.atan2(dir.x),
 				},
 				Velocity {
-					vel: dir.normalize() * speed,
+					vel: dir.normalize() * stats.speed,
 				},
 				Drawable {
 					kind: DrawKind::Bullet,
 				},
-				Stats {
-					speed: speed,
-					aggro_range: 0.,
-					close_enough_range: 0.,
-					size: 10.,
-					cast_delay: 0.,
-					skill_duration: 0.,
-				},
+				stats,
 				TimeToDie {
 					time_to_die: state.time() + 5.,
 				},
@@ -498,9 +551,9 @@ impl Map
 
 		// Bullet to player collision
 		let mut to_die = vec![];
-		let mut damagers = vec![];
-		if let (Ok(player_pos), Ok(player_stats)) = (
+		if let (Ok(player_pos), Ok(mut health), Ok(player_stats)) = (
 			self.world.get::<Position>(self.player),
+			self.world.get_mut::<Health>(self.player),
 			self.world.get::<Stats>(self.player),
 		)
 		{
@@ -512,17 +565,25 @@ impl Map
 				if dist < stats.size + player_stats.size
 				{
 					to_die.push(id);
-					damagers.push(bullet.damage);
+					health.health -= bullet.damage;
 				}
 			}
 		}
 
 		// Player's blade blade
-		if let (Ok(mut blade_blade), Ok(stats), Ok(mut time_to_move), Ok(mut target)) = (
+		let mut hits = vec![];
+		if let (
+			Ok(mut blade_blade),
+			Ok(stats),
+			Ok(mut time_to_move),
+			Ok(mut target),
+			Ok(position),
+		) = (
 			self.world.get_mut::<BladeBlade>(self.player),
 			self.world.get::<Stats>(self.player),
 			self.world.get_mut::<TimeToMove>(self.player),
 			self.world.get_mut::<Target>(self.player),
+			self.world.get_mut::<Position>(self.player),
 		)
 		{
 			if self.space_state && state.time() > blade_blade.time_to_fire
@@ -537,6 +598,53 @@ impl Map
 			{
 				blade_blade.time_to_lose_blade = state.time() + stats.skill_duration as f64;
 				blade_blade.num_blades = max(0, blade_blade.num_blades - 1);
+			}
+
+			if blade_blade.num_blades > 0 && state.time() > blade_blade.time_to_hit
+			{
+				blade_blade.time_to_hit =
+					state.time() + (0.5 / (blade_blade.num_blades as f32).sqrt()) as f64;
+
+				for (_id, (_, enemy_position, enemy_stats, mut health)) in self
+					.world
+					.query::<(&mut Enemy, &mut Position, &Stats, &mut Health)>()
+					.iter()
+				{
+					let dist = (position.pos - enemy_position.pos).norm();
+					if dist < stats.area_of_effect + enemy_stats.size
+					{
+						hits.push(enemy_position.pos);
+						health.health -= stats.spell_damage;
+						dbg!(health.health);
+					}
+				}
+			}
+		}
+
+		// Hits
+		for position in hits
+		{
+			self.world.spawn((
+				Position {
+					pos: position,
+					dir: 0.,
+				},
+				Drawable {
+					kind: DrawKind::Hit,
+				},
+				Stats::hit_stats(),
+				TimeToDie {
+					time_to_die: state.time() + 0.05,
+				},
+			));
+		}
+
+		// Health
+		for (id, health) in self.world.query::<&Health>().iter()
+		{
+			if health.health < 0.
+			{
+				to_die.push(id);
 			}
 		}
 
@@ -697,7 +805,8 @@ impl Map
 			}
 		}
 
-		for (_, (position, drawable)) in self.world.query::<(&Position, &Drawable)>().iter()
+		for (_, (position, drawable, stats)) in
+			self.world.query::<(&Position, &Drawable, &Stats)>().iter()
 		{
 			let pos = position.pos;
 			let dir = position.dir;
@@ -708,14 +817,15 @@ impl Map
 				{
 					let theta = 12. * std::f32::consts::PI * (i + j) as f32 / 40.;
 					let dx = theta / 3.;
-					let dz = 20. * (1. - i as f32 / 40.) * theta.sin();
-					let dy = 20. * (1. - i as f32 / 40.) * theta.cos();
+					let dz = stats.size * (1. - i as f32 / 40.) * theta.sin();
+					let dy = stats.size * (1. - i as f32 / 40.) * theta.cos();
 
 					let color = match drawable.kind
 					{
 						DrawKind::Player => Color::from_rgb_f(1., 1., i as f32 / 40.),
 						DrawKind::Enemy => Color::from_rgb_f(1., 0., i as f32 / 40.),
 						DrawKind::Bullet => Color::from_rgb_f(0.2, 0.2, 1.),
+						DrawKind::Hit => Color::from_rgb_f(1., 1., 0.),
 					};
 
 					let vtx_pos = Point2::new(dx, dz);
@@ -724,7 +834,7 @@ impl Map
 
 					vertices.push(Vertex {
 						x: pos.x + vtx_pos.x,
-						y: dy,
+						y: stats.size + dy,
 						z: pos.z + vtx_pos.y,
 						u: 0.,
 						v: 0.,
@@ -734,7 +844,10 @@ impl Map
 			}
 		}
 
-		for (_, (position, blade_blade)) in self.world.query::<(&Position, &BladeBlade)>().iter()
+		for (_, (position, blade_blade, stats)) in self
+			.world
+			.query::<(&Position, &BladeBlade, &Stats)>()
+			.iter()
 		{
 			let pos = position.pos;
 
@@ -744,7 +857,7 @@ impl Map
 
 			for blade in 0..blade_blade.num_blades
 			{
-				let r = 100. * radii[blade as usize];
+				let r = stats.area_of_effect * radii[blade as usize];
 
 				let theta = 2.
 					* std::f32::consts::PI
