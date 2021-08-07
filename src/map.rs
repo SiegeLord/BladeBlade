@@ -551,6 +551,7 @@ impl Map
 
 		// Bullet to player collision
 		let mut to_die = vec![];
+		let mut hits = vec![];
 		if let (Ok(player_pos), Ok(mut health), Ok(player_stats)) = (
 			self.world.get::<Position>(self.player),
 			self.world.get_mut::<Health>(self.player),
@@ -566,12 +567,12 @@ impl Map
 				{
 					to_die.push(id);
 					health.health -= bullet.damage;
+					hits.push(player_pos.pos);
 				}
 			}
 		}
 
 		// Player's blade blade
-		let mut hits = vec![];
 		if let (
 			Ok(mut blade_blade),
 			Ok(stats),
@@ -615,7 +616,6 @@ impl Map
 					{
 						hits.push(enemy_position.pos);
 						health.health -= stats.spell_damage;
-						dbg!(health.health);
 					}
 				}
 			}
