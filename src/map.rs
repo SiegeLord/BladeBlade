@@ -631,6 +631,7 @@ pub struct Map
 	state: State,
 	old_state: State,
 	old_paused: bool,
+	selection_made: bool,
 	reward_selection: i32,
 	rewards: Vec<Vec<Reward>>,
 
@@ -704,6 +705,7 @@ impl Map
 			state: State::Normal,
 			old_state: State::Normal,
 			old_paused: false,
+			selection_made: false,
 			reward_selection: 0,
 			rewards: vec![],
 			seed: seed,
@@ -714,12 +716,17 @@ impl Map
 	{
 		if self.state == State::LevelUp
 		{
-			let cx = self.display_width / 2.;
-			let cy = self.display_height / 2.;
+			if !self.selection_made
+			{
+				let cx = self.display_width / 2.;
+				let cy = self.display_height / 2.;
 
-			let dtheta = 2. * PI / 6.;
-			let mouse_theta = (self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
-			self.reward_selection = (6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
+				let dtheta = 2. * PI / 6.;
+				let mouse_theta =
+					(self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
+				self.reward_selection =
+					(6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
+			}
 
 			return Ok(());
 		}
@@ -1050,6 +1057,7 @@ impl Map
 			{
 				experience.level += 1;
 				self.state = State::LevelUp;
+				self.selection_made = false;
 				state.paused = true;
 
 				self.rewards.clear();
@@ -1173,6 +1181,7 @@ impl Map
 	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<Option<NextScreen>>
 	{
 		let mut ret = None;
+		let mut apply_rewards = false;
 		match event
 		{
 			Event::MouseButtonDown { button, x, y, .. } =>
@@ -1186,17 +1195,7 @@ impl Map
 
 				if self.state == State::LevelUp
 				{
-					let rewards = &self.rewards[self.reward_selection as usize];
-
-					if let Ok(mut stats) = self.world.get_mut::<Stats>(self.player)
-					{
-						for reward in rewards
-						{
-							reward.apply(&mut stats);
-						}
-					}
-					self.state = State::Normal;
-					state.paused = false;
+					self.selection_made = true;
 				}
 			}
 			Event::MouseAxes { x, y, .. } =>
@@ -1247,6 +1246,10 @@ impl Map
 						state.paused = true;
 						self.state = State::Quit;
 					}
+					else if self.state == State::LevelUp && self.selection_made
+					{
+						self.selection_made = false;
+					}
 				}
 				KeyCode::Y =>
 				{
@@ -1259,6 +1262,10 @@ impl Map
 					{
 						ret = Some(NextScreen::Game);
 						state.paused = false;
+					}
+					else if self.state == State::LevelUp && self.selection_made
+					{
+						apply_rewards = true;
 					}
 				}
 				KeyCode::N =>
@@ -1273,6 +1280,10 @@ impl Map
 						self.state = self.old_state;
 						state.paused = self.old_paused;
 					}
+					else if self.state == State::LevelUp && self.selection_made
+					{
+						self.selection_made = false;
+					}
 				}
 				_ => (),
 			},
@@ -1284,6 +1295,21 @@ impl Map
 				}
 			}
 			_ => (),
+		}
+
+		if apply_rewards
+		{
+			let rewards = &self.rewards[self.reward_selection as usize];
+
+			if let Ok(mut stats) = self.world.get_mut::<Stats>(self.player)
+			{
+				for reward in rewards
+				{
+					reward.apply(&mut stats);
+				}
+			}
+			self.state = State::Normal;
+			state.paused = false;
 		}
 
 		Ok(ret)
@@ -1625,6 +1651,8 @@ impl Map
 		let fy = -1. + 2. * y as f32 / self.display_height;
 		let ground_pos = get_ground_from_screen(fx, -fy, self.project, camera);
 
+		// Enemy health bar
+
 		let mut best_id = None;
 		let mut best_dist = 1000.;
 		for (id, (_, _, position, stats)) in self
@@ -1707,6 +1735,8 @@ impl Map
 			);
 		}
 
+		// Level up
+
 		if self.state == State::LevelUp
 		{
 			state.prim.draw_filled_rectangle(
@@ -1718,6 +1748,7 @@ impl Map
 			);
 
 			let dtheta = 2. * PI / 6.;
+			let lh = self.ui_font.get_line_height() as f32;
 
 			for (i, rewards) in self.rewards.iter().enumerate()
 			{
@@ -1725,7 +1756,6 @@ impl Map
 
 				let x = cx + theta.cos() * 300.;
 				let y = cy + theta.sin() * 300.;
-				let lh = self.ui_font.get_line_height() as f32;
 
 				for (j, reward) in rewards.iter().enumerate()
 				{
@@ -1745,6 +1775,18 @@ impl Map
 						&reward.description(),
 					);
 				}
+			}
+
+			if self.selection_made
+			{
+				state.core.draw_text(
+					&self.ui_font,
+					Color::from_rgb_f(1., 1., 1.),
+					cx,
+					cy - lh / 2.,
+					FontAlign::Centre,
+					"You sure! (Y/N)",
+				);
 			}
 		}
 		else if self.state == State::Quit
