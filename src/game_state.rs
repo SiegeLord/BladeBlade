@@ -19,6 +19,7 @@ pub struct GameState
 	pub font: FontAddon,
 	pub ttf: TtfAddon,
 	pub tick: i64,
+	pub paused: bool,
 	pub sfx: Sfx,
 
 	bitmaps: HashMap<String, Bitmap>,
@@ -49,6 +50,7 @@ impl GameState
 			font: font,
 			ttf: ttf,
 			sfx: sfx,
+			paused: false,
 		})
 	}
 

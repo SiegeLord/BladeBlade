@@ -11,7 +11,7 @@ use std::{fs, path};
 
 pub const DT: f32 = 1. / 120.;
 pub const TILE: f32 = 64.;
-pub const GRAVITY: f32 = 100.;
+pub const PI: f32 = std::f32::consts::PI;
 pub type Vec2D = nalgebra::Vector2<f32>;
 pub type Vec3D = nalgebra::Vector3<f32>;
 

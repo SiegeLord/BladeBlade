@@ -2,21 +2,160 @@ use crate::error::Result;
 use crate::game_state::GameState;
 use crate::utils::{
 	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
-	random_color, ColorExt, Vec3D, DT,
+	random_color, ColorExt, Vec3D, DT, PI,
 };
 use allegro::*;
+use allegro_font::*;
 use allegro_primitives::*;
 use na::{
 	Isometry3, Matrix4, Perspective3, Point2, Point3, Quaternion, RealField, Rotation2, Rotation3,
 	Unit, Vector2, Vector3, Vector4,
 };
 use nalgebra as na;
+use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 
 static CELL_SIZE: i32 = 2048;
 static CELL_RADIUS: i32 = 2;
 static SUPER_GRID: i32 = 8;
 static VERTEX_RADIUS: f32 = 64.;
+
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[repr(i32)]
+enum RewardKind
+{
+	Life = 0,
+	Mana,
+	Speed,
+	NumRewards,
+}
+
+impl RewardKind
+{
+	fn is_positive(&self, value: i32) -> bool
+	{
+		value > 0
+	}
+
+	fn gen_value(&self, tier: i32, rng: &mut impl Rng) -> i32
+	{
+		if rng.gen::<bool>()
+		{
+			rng.gen_range(1..5 * (tier + 1))
+		}
+		else
+		{
+			rng.gen_range(-5 * (tier + 1)..0)
+		}
+	}
+
+	fn from_idx(idx: i32) -> Option<Self>
+	{
+		match idx
+		{
+			0 => Some(RewardKind::Life),
+			1 => Some(RewardKind::Mana),
+			2 => Some(RewardKind::Speed),
+			_ => None,
+		}
+	}
+
+	fn weight(&self, _tier: i32) -> i32
+	{
+		match *self
+		{
+			RewardKind::Life | RewardKind::Mana | RewardKind::Speed => 1,
+			_ => 0,
+		}
+	}
+
+	fn description(&self, value: i32) -> String
+	{
+		let plus_sign = |v| if v > 0 { "+" } else { "" };
+
+		match *self
+		{
+			RewardKind::Life => format!("Life {}{}", plus_sign(value), value),
+			RewardKind::Mana => format!("Mana {}{}", plus_sign(value), value),
+			RewardKind::Speed => format!("Speed {}{}", plus_sign(value), value),
+			_ => "ERROR".into(),
+		}
+	}
+
+	fn apply(&self, value: i32, stats: &mut Stats)
+	{
+		match *self
+		{
+			RewardKind::Life =>
+			{
+				stats.max_life += value as f32;
+			}
+			RewardKind::Mana =>
+			{
+				stats.max_mana += value as f32;
+			}
+			RewardKind::Speed =>
+			{
+				stats.speed += value as f32;
+			}
+			_ => unreachable!(),
+		}
+	}
+}
+
+struct Reward
+{
+	tier: i32,
+	value: i32,
+	kind: RewardKind,
+}
+
+impl Reward
+{
+	fn new(tier: i32, exclude_rewards: &[Reward]) -> Self
+	{
+		let mut rng = thread_rng();
+
+		let mut weights = Vec::with_capacity(RewardKind::NumRewards as usize);
+		for idx in 0..RewardKind::NumRewards as i32
+		{
+			let kind = RewardKind::from_idx(idx).unwrap();
+			weights.push(kind.weight(tier));
+		}
+
+		let dist = WeightedIndex::new(&weights).unwrap();
+
+		let mut kind;
+		'restart: loop
+		{
+			kind = RewardKind::from_idx(dist.sample(&mut rng) as i32).unwrap();
+			for other_kind in exclude_rewards
+			{
+				if other_kind.kind == kind
+				{
+					continue 'restart;
+				}
+			}
+			break;
+		}
+		let value = kind.gen_value(tier, &mut rng);
+		Self {
+			kind: kind,
+			tier: tier,
+			value: value,
+		}
+	}
+
+	fn description(&self) -> String
+	{
+		self.kind.description(self.value)
+	}
+
+	fn apply(&self, stats: &mut Stats)
+	{
+		self.kind.apply(self.value, stats);
+	}
+}
 
 #[derive(Clone)]
 pub struct Cell
@@ -32,47 +171,61 @@ impl Cell
 		let mut rng = thread_rng();
 		let world_center =
 			Point2::new((center.x * CELL_SIZE) as f32, (center.y * CELL_SIZE) as f32);
-		if center.x != 0 || center.y != 0
+
+		let w = CELL_SIZE as f32 / 2. - 100.;
+
+		for _ in 0..3
 		{
-			let w = CELL_SIZE as f32 / 2. - 100.;
+			let mut dx = world_center.x + rng.gen_range(-w..w);
+			let mut dy = world_center.y + rng.gen_range(-w..w);
 
-			for _ in 0..3
+			if center.x == 0 || center.y == 0
 			{
-				let dx = world_center.x + rng.gen_range(-w..w);
-				let dy = world_center.y + rng.gen_range(-w..w);
-
-				for y in -1..=1
+				loop
 				{
-					for x in -1..=1
+					dx = world_center.x + rng.gen_range(-w..w);
+					dy = world_center.y + rng.gen_range(-w..w);
+
+					if (dx * dx + dy * dy) > 400. * 400.
 					{
-						world.spawn((
-							Enemy {
-								time_to_deaggro: 0.,
-								fire_delay: 0.25,
-							},
-							Position {
-								pos: Point3::new(dx + 50. * x as f32, 15., dy + 50. * y as f32),
-								dir: 0.,
-							},
-							TimeToMove { time_to_move: 0. },
-							Velocity {
-								vel: Vector3::new(0., 0., 0.),
-							},
-							Drawable {
-								kind: DrawKind::Enemy,
-							},
-							Target { pos: None },
-							Collision {
-								kind: CollisionKind::Enemy,
-							},
-							Stats::enemy_stats(),
-							Weapon {
-								time_to_fire: 0.,
-								range: 320.,
-							},
-							Health { health: 100. },
-						));
+						break;
 					}
+				}
+			}
+
+			for y in -1..=1
+			{
+				for x in -1..=1
+				{
+					world.spawn((
+						Enemy {
+							time_to_deaggro: 0.,
+							fire_delay: 1.,
+							name: "Basic Enemy".into(),
+							experience: 1000,
+						},
+						Position {
+							pos: Point3::new(dx + 50. * x as f32, 15., dy + 50. * y as f32),
+							dir: 0.,
+						},
+						TimeToMove { time_to_move: 0. },
+						Velocity {
+							vel: Vector3::new(0., 0., 0.),
+						},
+						Drawable {
+							kind: DrawKind::Enemy,
+						},
+						Target { pos: None },
+						Collision {
+							kind: CollisionKind::Enemy,
+						},
+						Stats::enemy_stats(),
+						Weapon {
+							time_to_fire: 0.,
+							range: 320.,
+						},
+						Life { life: 100. },
+					));
 				}
 			}
 		}
@@ -228,7 +381,7 @@ pub struct Drawable
 	kind: DrawKind,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Stats
 {
 	pub speed: f32,
@@ -239,6 +392,11 @@ pub struct Stats
 	pub skill_duration: f32,
 	pub area_of_effect: f32,
 	pub spell_damage: f32,
+	pub max_life: f32,
+	pub max_mana: f32,
+	pub life_regen: f32,
+	pub mana_regen: f32,
+	pub mana_cost: f32,
 }
 
 impl Stats
@@ -254,6 +412,11 @@ impl Stats
 			skill_duration: 1.,
 			area_of_effect: 100.,
 			spell_damage: 10.,
+			max_life: 100.,
+			max_mana: 100.,
+			life_regen: 1.,
+			mana_regen: 5.,
+			mana_cost: 10.,
 		}
 	}
 
@@ -268,6 +431,11 @@ impl Stats
 			skill_duration: 1.,
 			area_of_effect: 100.,
 			spell_damage: 1.,
+			max_life: 100.,
+			max_mana: 100.,
+			life_regen: 0.,
+			mana_regen: 10.,
+			mana_cost: 10.,
 		}
 	}
 
@@ -282,6 +450,11 @@ impl Stats
 			skill_duration: 0.,
 			area_of_effect: 100.,
 			spell_damage: 1.,
+			max_life: 100.,
+			max_mana: 100.,
+			life_regen: 10.,
+			mana_regen: 10.,
+			mana_cost: 10.,
 		}
 	}
 
@@ -296,6 +469,11 @@ impl Stats
 			skill_duration: 0.,
 			area_of_effect: 100.,
 			spell_damage: 1.,
+			max_life: 100.,
+			max_mana: 100.,
+			life_regen: 10.,
+			mana_regen: 10.,
+			mana_cost: 10.,
 		}
 	}
 }
@@ -305,6 +483,15 @@ pub struct Enemy
 {
 	pub time_to_deaggro: f64,
 	pub fire_delay: f32,
+	pub name: String,
+	pub experience: i32,
+}
+
+#[derive(Clone)]
+pub struct Experience
+{
+	level: i32,
+	experience: i32,
 }
 
 #[derive(Clone)]
@@ -342,9 +529,22 @@ pub struct BladeBlade
 }
 
 #[derive(Clone)]
-pub struct Health
+pub struct Life
 {
-	health: f32,
+	life: f32,
+}
+
+#[derive(Clone)]
+pub struct Mana
+{
+	mana: f32,
+}
+
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+enum State
+{
+	Normal,
+	LevelUp,
 }
 
 #[derive(Debug, Clone)]
@@ -364,7 +564,7 @@ impl GridVertex
 
 		for i in 0..3
 		{
-			let theta = 2. * std::f32::consts::PI * i as f32 / 3.;
+			let theta = 2. * PI * i as f32 / 3.;
 			for j in 0..5
 			{
 				let mut x = j as f32 * VERTEX_RADIUS * theta.cos() / 4.;
@@ -372,9 +572,9 @@ impl GridVertex
 				let mut y = 0.;
 				if j != 0 && j != 4
 				{
-					x += 4. * rng.gen_range(-1.0..1.0);
+					x += 12. * rng.gen_range(-1.0..1.0);
 					y += 4. * rng.gen_range(-1.0..1.0);
-					z += 4. * rng.gen_range(-1.0..1.0);
+					z += 12. * rng.gen_range(-1.0..1.0);
 				}
 				branches[i].push((x, y, z));
 			}
@@ -406,6 +606,11 @@ impl GridVertex
 	}
 }
 
+fn level_to_experience(level: i32) -> i32
+{
+	1000 * level.pow(3)
+}
+
 pub struct Map
 {
 	world: hecs::World,
@@ -419,11 +624,16 @@ pub struct Map
 	space_state: bool,
 
 	cells: Vec<Cell>,
+	ui_font: Font,
+
+	state: State,
+	reward_selection: i32,
+	rewards: Vec<Vec<Reward>>,
 }
 
 impl Map
 {
-	pub fn new(display_width: f32, display_height: f32) -> Self
+	pub fn new(state: &GameState, display_width: f32, display_height: f32) -> Result<Self>
 	{
 		let mut world = hecs::World::default();
 
@@ -451,7 +661,12 @@ impl Map
 				time_to_lose_blade: 0.,
 				time_to_hit: 0.,
 			},
-			Health { health: 100. },
+			Life { life: 100. },
+			Mana { mana: 100. },
+			Experience {
+				level: 1,
+				experience: level_to_experience(1),
+			},
 		));
 
 		let mut cells = vec![];
@@ -463,7 +678,7 @@ impl Map
 			}
 		}
 
-		Self {
+		Ok(Self {
 			world: world,
 			player: player,
 			player_pos: player_pos,
@@ -474,11 +689,30 @@ impl Map
 			mouse_pos: (0, 0),
 			space_state: false,
 			cells: cells,
-		}
+			ui_font: state
+				.ttf
+				.load_ttf_font("data/Energon.ttf", 16, Flag::zero())
+				.map_err(|_| "Couldn't load 'data/Energon.ttf'".to_string())?,
+			state: State::Normal,
+			reward_selection: 0,
+			rewards: vec![],
+		})
 	}
 
 	pub fn logic(&mut self, state: &mut GameState) -> Result<()>
 	{
+		if self.state == State::LevelUp
+		{
+			let cx = self.display_width / 2.;
+			let cy = self.display_height / 2.;
+
+			let dtheta = 2. * PI / 6.;
+			let mouse_theta = (self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
+			self.reward_selection = (6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
+
+			return Ok(());
+		}
+
 		if self.mouse_state[1]
 		{
 			let (x, y) = self.mouse_pos;
@@ -599,9 +833,9 @@ impl Map
 		// Aggro
 		if let Ok(player_pos) = self.world.get::<Position>(self.player)
 		{
-			for (_id, (enemy, position, target, stats)) in self
+			for (_id, (enemy, position, target, weapon, stats)) in self
 				.world
-				.query::<(&mut Enemy, &mut Position, &mut Target, &Stats)>()
+				.query::<(&mut Enemy, &mut Position, &mut Target, &mut Weapon, &Stats)>()
 				.iter()
 			{
 				let pos = position.pos;
@@ -609,6 +843,10 @@ impl Map
 				if dist < stats.aggro_range || state.time() < enemy.time_to_deaggro
 				{
 					//~ println!("Aggro {:?}", id);
+					if target.pos.is_none()
+					{
+						weapon.time_to_fire = state.time() + enemy.fire_delay as f64;
+					}
 					target.pos = Some(player_pos.pos);
 					if dist < stats.aggro_range
 					{
@@ -680,9 +918,9 @@ impl Map
 		// Bullet to player collision
 		let mut to_die = vec![];
 		let mut hits = vec![];
-		if let (Ok(player_pos), Ok(mut health), Ok(player_stats)) = (
+		if let (Ok(player_pos), Ok(mut life), Ok(player_stats)) = (
 			self.world.get::<Position>(self.player),
-			self.world.get_mut::<Health>(self.player),
+			self.world.get_mut::<Life>(self.player),
 			self.world.get::<Stats>(self.player),
 		)
 		{
@@ -694,7 +932,7 @@ impl Map
 				if dist < stats.size + player_stats.size
 				{
 					to_die.push(id);
-					health.health -= bullet.damage;
+					life.life -= bullet.damage;
 					hits.push(player_pos.pos);
 				}
 			}
@@ -706,22 +944,27 @@ impl Map
 			Ok(stats),
 			Ok(mut time_to_move),
 			Ok(mut target),
+			Ok(mut mana),
 			Ok(position),
 		) = (
 			self.world.get_mut::<BladeBlade>(self.player),
 			self.world.get::<Stats>(self.player),
 			self.world.get_mut::<TimeToMove>(self.player),
 			self.world.get_mut::<Target>(self.player),
+			self.world.get_mut::<Mana>(self.player),
 			self.world.get_mut::<Position>(self.player),
 		)
 		{
-			if self.space_state && state.time() > blade_blade.time_to_fire
+			if self.space_state
+				&& state.time() > blade_blade.time_to_fire
+				&& mana.mana > stats.mana_cost
 			{
 				blade_blade.time_to_fire = state.time() + stats.cast_delay as f64;
 				blade_blade.time_to_lose_blade = state.time() + stats.skill_duration as f64;
 				blade_blade.num_blades = min(10, blade_blade.num_blades + 1);
 				time_to_move.time_to_move = state.time() + stats.cast_delay as f64;
 				target.pos = None;
+				mana.mana -= stats.mana_cost;
 			}
 			if state.time() > blade_blade.time_to_lose_blade
 			{
@@ -734,16 +977,16 @@ impl Map
 				blade_blade.time_to_hit =
 					state.time() + (0.5 / (blade_blade.num_blades as f32).sqrt()) as f64;
 
-				for (_id, (_, enemy_position, enemy_stats, mut health)) in self
+				for (_id, (_, enemy_position, enemy_stats, mut life)) in self
 					.world
-					.query::<(&mut Enemy, &mut Position, &Stats, &mut Health)>()
+					.query::<(&mut Enemy, &mut Position, &Stats, &mut Life)>()
 					.iter()
 				{
 					let dist = (position.pos - enemy_position.pos).norm();
 					if dist < stats.area_of_effect + enemy_stats.size
 					{
 						hits.push(enemy_position.pos);
-						health.health -= stats.spell_damage;
+						life.life -= stats.spell_damage;
 					}
 				}
 			}
@@ -767,12 +1010,62 @@ impl Map
 			));
 		}
 
-		// Health
-		for (id, health) in self.world.query::<&Health>().iter()
+		// Life
+		for (id, life) in self.world.query::<&Life>().iter()
 		{
-			if health.health < 0.
+			if life.life < 0.
 			{
 				to_die.push(id);
+			}
+		}
+
+		// Experience on death
+		if let Ok(mut experience) = self.world.get_mut::<Experience>(self.player)
+		{
+			for (_, (enemy, life)) in self.world.query::<(&Enemy, &Life)>().iter()
+			{
+				if life.life < 0.
+				{
+					experience.experience += enemy.experience;
+				}
+			}
+
+			if experience.experience >= level_to_experience(experience.level + 1)
+			{
+				experience.level += 1;
+				self.state = State::LevelUp;
+				state.paused = true;
+
+				self.rewards.clear();
+				for _ in 0..6
+				{
+					let mut reward_vec = vec![];
+					for _ in 0..2
+					{
+						reward_vec.push(Reward::new(0, &reward_vec[..]))
+					}
+					reward_vec.sort_by_key(|r| r.kind as i32);
+					self.rewards.push(reward_vec);
+				}
+			}
+		}
+
+		// Life/mana regen
+		for (_, (life, stats)) in self.world.query::<(&mut Life, &Stats)>().iter()
+		{
+			life.life += (stats.max_life * stats.life_regen / 100.) * DT;
+			if life.life > stats.max_life
+			{
+				life.life = stats.max_life;
+			}
+		}
+
+		for (_, (mana, stats)) in self.world.query::<(&mut Mana, &Stats)>().iter()
+		{
+			mana.mana += (stats.max_mana * stats.mana_regen / 100.) * DT;
+			if mana.mana > stats.max_mana
+			{
+				mana.mana = stats.max_mana;
 			}
 		}
 
@@ -860,7 +1153,7 @@ impl Map
 		Ok(())
 	}
 
-	pub fn input(&mut self, event: &Event, _state: &mut GameState) -> Result<()>
+	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<()>
 	{
 		match event
 		{
@@ -872,6 +1165,21 @@ impl Map
 			Event::MouseButtonUp { button, .. } =>
 			{
 				self.mouse_state[*button as usize] = false;
+
+				if self.state == State::LevelUp
+				{
+					let rewards = &self.rewards[self.reward_selection as usize];
+
+					if let Ok(mut stats) = self.world.get_mut::<Stats>(self.player)
+					{
+						for reward in rewards
+						{
+							reward.apply(&mut stats);
+						}
+					}
+					self.state = State::Normal;
+					state.paused = false;
+				}
 			}
 			Event::MouseAxes { x, y, .. } =>
 			{
@@ -882,6 +1190,18 @@ impl Map
 				if *keycode == KeyCode::Space
 				{
 					self.space_state = true;
+				}
+				if *keycode == KeyCode::P
+				{
+					state.paused = !state.paused;
+					if self.state == State::Normal
+					{
+						self.state = State::LevelUp;
+					}
+					else
+					{
+						self.state = State::Normal;
+					}
 				}
 			}
 			Event::KeyUp { keycode, .. } =>
@@ -908,7 +1228,7 @@ impl Map
 		)
 	}
 
-	pub fn draw(&self, state: &GameState)
+	pub fn draw(&self, state: &GameState) -> Result<()>
 	{
 		let mut vertices = vec![];
 		state.core.set_depth_test(Some(DepthFunction::Less));
@@ -923,7 +1243,7 @@ impl Map
 			.core
 			.use_transform(&mat4_to_transform(camera.to_homogeneous()));
 
-		let theta = std::f32::consts::PI / 3.;
+		let theta = PI / 3.;
 		let c = theta.cos();
 		let s = theta.sin();
 
@@ -1004,11 +1324,19 @@ impl Map
 			let pos = position.pos;
 			let dir = position.dir;
 
+			if pos.x < top_left.x - 250.
+				|| pos.x > top_right.x + 250.
+				|| pos.z < top_left.z - 250.
+				|| pos.z > bottom_left.z + 250.
+			{
+				continue;
+			}
+
 			for i in 0..40
 			{
 				for j in 0..2
 				{
-					let theta = 12. * std::f32::consts::PI * (i + j) as f32 / 40.;
+					let theta = 12. * PI * (i + j) as f32 / 40.;
 					let dx = theta / 3.;
 					let dz = stats.size * (1. - i as f32 / 40.) * theta.sin();
 					let dy = stats.size * (1. - i as f32 / 40.) * theta.cos();
@@ -1046,17 +1374,16 @@ impl Map
 
 			let radii = [1., 0.5, 0.3, 0.7, 0.1, 0.6, 0.4, 0.9, 0.2, 0.8];
 			let offsets = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.];
-			let speeds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.];
+			let speeds = [0.1, 0.3, 0.5, 0.7, 1.1, 1.3, 1.7, 1.9, 2.3, 3.1];
 
 			for blade in 0..blade_blade.num_blades
 			{
 				let r = stats.area_of_effect * radii[blade as usize];
 
 				let theta = 2.
-					* std::f32::consts::PI
-					* (state.time() as f32 / (1. - 0.5 * speeds[blade as usize])
-						+ offsets[blade as usize]);
-				let theta = theta.rem_euclid(2. * std::f32::consts::PI);
+					* PI * (state.time() as f32 / (1. - 0.5 * speeds[blade as usize] / 3.)
+					+ offsets[blade as usize]);
+				let theta = theta.rem_euclid(2. * PI);
 
 				let color = Color::from_rgb_f(0.2, 1., 0.2);
 
@@ -1084,7 +1411,7 @@ impl Map
 				{
 					for j in 0..2
 					{
-						let theta2 = -0.25 * std::f32::consts::PI * (i + j) as f32 / 10.;
+						let theta2 = -0.25 * PI * (i + j) as f32 / 10.;
 						let dx = r * (theta2 + theta).cos();
 						let dz = r * (theta2 + theta).sin();
 						let dy = pos.y;
@@ -1111,5 +1438,256 @@ impl Map
 			vertices.len() as u32,
 			PrimType::LineList,
 		);
+
+		// UI
+
+		let ortho_mat =
+			Matrix4::new_orthographic(0., self.display_width, self.display_height, 0., -1., 1.);
+
+		state
+			.core
+			.use_projection_transform(&mat4_to_transform(ortho_mat));
+		state.core.use_transform(&Transform::identity());
+		state.core.set_depth_test(None);
+
+		// Life/Mana
+
+		let r = 125.;
+		let dx = r * 1.2;
+		let dy = self.display_height - r * 1.2;
+
+		let mut f = -1.;
+		if let (Ok(life), Ok(stats)) = (
+			self.world.get::<Life>(self.player),
+			self.world.get::<Stats>(self.player),
+		)
+		{
+			f = 2. * (life.life / stats.max_life) - 1.;
+
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				dx,
+				dy - r * 1.2,
+				FontAlign::Centre,
+				&format!(
+					"{} / {}",
+					life.life.ceil() as i32,
+					stats.max_life.ceil() as i32,
+				),
+			)
+		}
+
+		draw_orb(state, r, dx, dy, f, Color::from_rgb_f(0.7, 0.1, 0.1));
+
+		let dx = self.display_width - r * 1.2;
+
+		let mut f = -1.;
+		if let (Ok(mana), Ok(stats)) = (
+			self.world.get::<Mana>(self.player),
+			self.world.get::<Stats>(self.player),
+		)
+		{
+			f = 2. * (mana.mana / stats.max_mana) - 1.;
+
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				dx,
+				dy - r * 1.2,
+				FontAlign::Centre,
+				&format!(
+					"{} / {}",
+					mana.mana.ceil() as i32,
+					stats.max_mana.ceil() as i32,
+				),
+			)
+		}
+
+		// Experience
+
+		if let Ok(experience) = self.world.get::<Experience>(self.player)
+		{
+			let dx = self.display_width / 2.;
+			let dy = self.display_height - 64.;
+
+			let w = self.display_width - r * 5.;
+			let h = 16.;
+
+			let old_breakpoint = level_to_experience(experience.level) as f32;
+			let new_breakpoint = level_to_experience(experience.level + 1) as f32;
+
+			let f =
+				(experience.experience as f32 - old_breakpoint) / (new_breakpoint - old_breakpoint);
+
+			state.prim.draw_filled_rectangle(
+				dx - w / 2.,
+				dy,
+				dx - w / 2. + w * f,
+				dy + h,
+				Color::from_rgb_f(0.9, 0.9, 0.5),
+			);
+			state.prim.draw_rectangle(
+				dx - w / 2.,
+				dy,
+				dx + w / 2.,
+				dy + h,
+				Color::from_rgb_f(0.2, 0.2, 0.2),
+				2.,
+			);
+
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				dx,
+				dy - 2. * h,
+				FontAlign::Centre,
+				&format!("Level: {}", experience.level,),
+			)
+		}
+
+		draw_orb(state, r, dx, dy, f, Color::from_rgb_f(0.1, 0.1, 0.7));
+
+		let (x, y) = self.mouse_pos;
+		let fx = -1. + 2. * x as f32 / self.display_width;
+		let fy = -1. + 2. * y as f32 / self.display_height;
+		let ground_pos = get_ground_from_screen(fx, -fy, self.project, camera);
+
+		let mut best_id = None;
+		let mut best_dist = 1000.;
+		for (id, (_, _, position, stats)) in self
+			.world
+			.query::<(&Life, &Enemy, &Position, &Stats)>()
+			.iter()
+		{
+			let dist = (ground_pos - position.pos).norm();
+			if dist < 3. * stats.size
+			{
+				if dist < best_dist
+				{
+					best_dist = dist;
+					best_id = Some(id);
+				}
+			}
+		}
+
+		if let Some(id) = best_id
+		{
+			if let Some((life, enemy, stats)) =
+				self.world.query_one::<(&Life, &Enemy, &Stats)>(id)?.get()
+			{
+				let f = life.life / stats.max_life;
+
+				let w = 400.;
+				let h = 32.;
+				let dx = self.display_width / 2. - w / 2.;
+				let dy = 32.;
+
+				state.prim.draw_rectangle(
+					dx,
+					dy,
+					dx + w,
+					dy + h,
+					Color::from_rgb_f(0.2, 0.2, 0.2),
+					2.,
+				);
+				state.prim.draw_filled_rectangle(
+					dx,
+					dy,
+					dx + w * f,
+					dy + h,
+					Color::from_rgb_f(0.7, 0.1, 0.1),
+				);
+
+				state.core.draw_text(
+					&self.ui_font,
+					Color::from_rgb_f(1., 1., 1.),
+					self.display_width / 2.,
+					dy - self.ui_font.get_line_height() as f32 / 2. + h / 2.,
+					FontAlign::Centre,
+					&enemy.name,
+				);
+			}
+		}
+
+		if self.state == State::LevelUp
+		{
+			state.prim.draw_filled_rectangle(
+				0.,
+				0.,
+				self.display_width,
+				self.display_height,
+				Color::from_rgba_f(0., 0., 0., 0.5),
+			);
+
+			let cx = self.display_width / 2.;
+			let cy = self.display_height / 2.;
+
+			let dtheta = 2. * PI / 6.;
+
+			for (i, rewards) in self.rewards.iter().enumerate()
+			{
+				let theta = dtheta * i as f32;
+
+				let x = cx + theta.cos() * 300.;
+				let y = cy + theta.sin() * 300.;
+				let lw = self.ui_font.get_line_height() as f32;
+
+				for (j, reward) in rewards.iter().enumerate()
+				{
+					state.core.draw_text(
+						&self.ui_font,
+						if i as i32 == self.reward_selection
+						{
+							Color::from_rgb_f(1., 1., 1.)
+						}
+						else
+						{
+							Color::from_rgb_f(0.7, 0.7, 0.7)
+						},
+						x,
+						y + lw * j as f32,
+						FontAlign::Centre,
+						&reward.description(),
+					);
+				}
+			}
+		}
+
+		Ok(())
 	}
+}
+
+fn draw_orb(state: &GameState, r: f32, dx: f32, dy: f32, f: f32, color: Color)
+{
+	let dtheta = 2. * PI / 32.;
+
+	let mut vertices = vec![];
+	let theta_start = f.acos();
+	let num_vertices = ((2. * PI - 2. * theta_start) / dtheta) as i32;
+	let dtheta = (2. * PI - 2. * theta_start) / num_vertices as f32;
+	for i in 0..=num_vertices
+	{
+		let theta = theta_start + dtheta * i as f32;
+		vertices.push(Vertex {
+			x: dx - r * theta.sin(),
+			y: dy - r * theta.cos(),
+			z: 0.,
+			u: 0.,
+			v: 0.,
+			color: color,
+		})
+	}
+
+	state.prim.draw_prim(
+		&vertices[..],
+		Option::<&Bitmap>::None,
+		0,
+		vertices.len() as u32,
+		PrimType::TriangleFan,
+	);
+
+	state
+		.prim
+		.draw_circle(dx, dy, r, Color::from_rgb_f(0.2, 0.2, 0.2), 2.);
 }

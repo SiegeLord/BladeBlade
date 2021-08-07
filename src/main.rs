@@ -72,7 +72,11 @@ fn real_main() -> Result<()>
 	let mut quit = false;
 	let mut draw = true;
 
-	let mut map = map::Map::new(display.get_width() as f32, display.get_height() as f32);
+	let mut map = map::Map::new(
+		&state,
+		display.get_width() as f32,
+		display.get_height() as f32,
+	)?;
 
 	timer.start();
 	while !quit
@@ -84,7 +88,7 @@ fn real_main() -> Result<()>
 			state.core.clear_to_color(Color::from_rgb_f(0., 0., 0.2));
 			state.core.clear_depth_buffer(1.);
 
-			map.draw(&state);
+			map.draw(&state)?;
 
 			state.core.flip_display();
 			let end = state.core.get_time();
@@ -107,7 +111,10 @@ fn real_main() -> Result<()>
 				map.logic(&mut state)?;
 				state.sfx.update_sounds()?;
 
-				state.tick += 1;
+				if !state.paused
+				{
+					state.tick += 1;
+				}
 				draw = true;
 			}
 			_ => (),
