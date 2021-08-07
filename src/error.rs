@@ -1,6 +1,5 @@
 use std::backtrace::Backtrace;
-use std::error;
-use std::fmt;
+use std::{error, fmt};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

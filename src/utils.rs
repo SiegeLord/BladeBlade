@@ -7,8 +7,7 @@ use rand::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use slr_config::{from_element, to_element, ConfigElement, Source};
-use std::fs;
-use std::path;
+use std::{fs, path};
 
 pub const DT: f32 = 1. / 120.;
 pub const TILE: f32 = 64.;
@@ -99,6 +98,18 @@ pub fn get_ground_from_screen(
 pub fn max<T: PartialOrd>(x: T, y: T) -> T
 {
 	if x > y
+	{
+		x
+	}
+	else
+	{
+		y
+	}
+}
+
+pub fn min<T: PartialOrd>(x: T, y: T) -> T
+{
+	if x < y
 	{
 		x
 	}
