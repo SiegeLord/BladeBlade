@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::game_state::GameState;
+use crate::game_state::{GameState, NextScreen};
 use crate::utils::{
 	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
 	random_color, ColorExt, Vec3D, DT, PI,
@@ -166,7 +166,7 @@ pub struct Cell
 
 impl Cell
 {
-	fn new(center: Point2<i32>, world: &mut hecs::World) -> Self
+	fn new(center: Point2<i32>, seed: u64, world: &mut hecs::World) -> Self
 	{
 		let mut rng = thread_rng();
 		let world_center =
@@ -237,9 +237,9 @@ impl Cell
 		{
 			for x in -num_vertices..num_vertices + 1
 			{
-				let seed = (x + center.x * num_vertices * 2)
+				let grid_seed = (x + center.x * num_vertices * 2)
 					+ (num_vertices * num_vertices) * (y + center.y * num_vertices * 2);
-				vertices.push(GridVertex::new(seed as u64));
+				vertices.push(GridVertex::new(grid_seed as u64 + seed));
 			}
 		}
 
@@ -540,11 +540,13 @@ pub struct Mana
 	mana: f32,
 }
 
-#[derive(Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd)]
 enum State
 {
 	Normal,
 	LevelUp,
+	Restart,
+	Quit,
 }
 
 #[derive(Debug, Clone)]
@@ -627,13 +629,19 @@ pub struct Map
 	ui_font: Font,
 
 	state: State,
+	old_state: State,
+	old_paused: bool,
 	reward_selection: i32,
 	rewards: Vec<Vec<Reward>>,
+
+	seed: u64,
 }
 
 impl Map
 {
-	pub fn new(state: &GameState, display_width: f32, display_height: f32) -> Result<Self>
+	pub fn new(
+		state: &GameState, seed: u64, display_width: f32, display_height: f32,
+	) -> Result<Self>
 	{
 		let mut world = hecs::World::default();
 
@@ -674,7 +682,7 @@ impl Map
 		{
 			for x in -CELL_RADIUS..=CELL_RADIUS
 			{
-				cells.push(Cell::new(Point2::new(x, y), &mut world));
+				cells.push(Cell::new(Point2::new(x, y), seed, &mut world));
 			}
 		}
 
@@ -694,8 +702,11 @@ impl Map
 				.load_ttf_font("data/Energon.ttf", 16, Flag::zero())
 				.map_err(|_| "Couldn't load 'data/Energon.ttf'".to_string())?,
 			state: State::Normal,
+			old_state: State::Normal,
+			old_paused: false,
 			reward_selection: 0,
 			rewards: vec![],
+			seed: seed,
 		})
 	}
 
@@ -710,6 +721,11 @@ impl Map
 			let mouse_theta = (self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
 			self.reward_selection = (6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
 
+			return Ok(());
+		}
+
+		if self.state != State::Normal
+		{
 			return Ok(());
 		}
 
@@ -1135,7 +1151,8 @@ impl Map
 		}
 		for cell_center in new_cell_centers
 		{
-			self.cells.push(Cell::new(cell_center, &mut self.world));
+			self.cells
+				.push(Cell::new(cell_center, self.seed, &mut self.world));
 		}
 
 		// Remove dead entities
@@ -1153,8 +1170,9 @@ impl Map
 		Ok(())
 	}
 
-	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<()>
+	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<Option<NextScreen>>
 	{
+		let mut ret = None;
 		match event
 		{
 			Event::MouseButtonDown { button, x, y, .. } =>
@@ -1185,13 +1203,10 @@ impl Map
 			{
 				self.mouse_pos = (*x, *y);
 			}
-			Event::KeyDown { keycode, .. } =>
+			Event::KeyDown { keycode, .. } => match *keycode
 			{
-				if *keycode == KeyCode::Space
-				{
-					self.space_state = true;
-				}
-				if *keycode == KeyCode::P
+				KeyCode::Space => self.space_state = true,
+				KeyCode::P =>
 				{
 					state.paused = !state.paused;
 					if self.state == State::Normal
@@ -1203,7 +1218,64 @@ impl Map
 						self.state = State::Normal;
 					}
 				}
-			}
+				KeyCode::R =>
+				{
+					if self.state == State::Normal
+					{
+						state.paused = true;
+						self.old_state = self.state;
+						self.state = State::Restart
+					}
+				}
+				KeyCode::Escape =>
+				{
+					if self.state == State::Quit
+					{
+						self.state = self.old_state;
+						state.paused = self.old_paused;
+					}
+					else if self.state == State::Restart
+					{
+						self.state = self.old_state;
+						state.paused = self.old_paused;
+					}
+					else if self.state == State::Normal
+					{
+						self.old_paused = state.paused;
+						self.old_state = self.state;
+
+						state.paused = true;
+						self.state = State::Quit;
+					}
+				}
+				KeyCode::Y =>
+				{
+					if self.state == State::Quit
+					{
+						ret = Some(NextScreen::Quit);
+						state.paused = false;
+					}
+					else if self.state == State::Restart
+					{
+						ret = Some(NextScreen::Game);
+						state.paused = false;
+					}
+				}
+				KeyCode::N =>
+				{
+					if self.state == State::Quit
+					{
+						self.state = self.old_state;
+						state.paused = self.old_paused;
+					}
+					else if self.state == State::Restart
+					{
+						self.state = self.old_state;
+						state.paused = self.old_paused;
+					}
+				}
+				_ => (),
+			},
 			Event::KeyUp { keycode, .. } =>
 			{
 				if *keycode == KeyCode::Space
@@ -1214,7 +1286,7 @@ impl Map
 			_ => (),
 		}
 
-		Ok(())
+		Ok(ret)
 	}
 
 	fn make_camera(&self) -> Isometry3<f32>
@@ -1610,6 +1682,31 @@ impl Map
 			}
 		}
 
+		let cx = self.display_width / 2.;
+		let cy = self.display_height / 2.;
+
+		if self.state == State::Normal && self.world.entity(self.player).is_err()
+		{
+			state.prim.draw_filled_rectangle(
+				0.,
+				0.,
+				self.display_width,
+				self.display_height,
+				Color::from_rgba_f(0., 0., 0., 0.5),
+			);
+
+			let lh = self.ui_font.get_line_height() as f32;
+
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				cx,
+				cy - lh / 2.,
+				FontAlign::Centre,
+				"Your deeds of valor will be remembered (Esc/R)",
+			);
+		}
+
 		if self.state == State::LevelUp
 		{
 			state.prim.draw_filled_rectangle(
@@ -1620,9 +1717,6 @@ impl Map
 				Color::from_rgba_f(0., 0., 0., 0.5),
 			);
 
-			let cx = self.display_width / 2.;
-			let cy = self.display_height / 2.;
-
 			let dtheta = 2. * PI / 6.;
 
 			for (i, rewards) in self.rewards.iter().enumerate()
@@ -1631,7 +1725,7 @@ impl Map
 
 				let x = cx + theta.cos() * 300.;
 				let y = cy + theta.sin() * 300.;
-				let lw = self.ui_font.get_line_height() as f32;
+				let lh = self.ui_font.get_line_height() as f32;
 
 				for (j, reward) in rewards.iter().enumerate()
 				{
@@ -1646,12 +1740,54 @@ impl Map
 							Color::from_rgb_f(0.7, 0.7, 0.7)
 						},
 						x,
-						y + lw * j as f32,
+						y + lh * j as f32,
 						FontAlign::Centre,
 						&reward.description(),
 					);
 				}
 			}
+		}
+		else if self.state == State::Quit
+		{
+			state.prim.draw_filled_rectangle(
+				0.,
+				0.,
+				self.display_width,
+				self.display_height,
+				Color::from_rgba_f(0., 0., 0., 0.5),
+			);
+
+			let lh = self.ui_font.get_line_height() as f32;
+
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				cx,
+				cy - lh / 2.,
+				FontAlign::Centre,
+				"Quit? (Y/N)",
+			);
+		}
+		else if self.state == State::Restart
+		{
+			state.prim.draw_filled_rectangle(
+				0.,
+				0.,
+				self.display_width,
+				self.display_height,
+				Color::from_rgba_f(0., 0., 0., 0.5),
+			);
+
+			let lh = self.ui_font.get_line_height() as f32;
+
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				cx,
+				cy - lh / 2.,
+				FontAlign::Centre,
+				"Restart? (Y/N)",
+			);
 		}
 
 		Ok(())

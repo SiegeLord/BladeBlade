@@ -11,6 +11,12 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
 
+pub enum NextScreen
+{
+	Game,
+	Quit,
+}
+
 pub struct GameState
 {
 	pub core: Core,
