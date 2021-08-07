@@ -13,6 +13,93 @@ use na::{
 use nalgebra as na;
 use rand::prelude::*;
 
+static CELL_SIZE: i32 = 2048;
+static CELL_RADIUS: i32 = 2;
+
+#[derive(Clone)]
+pub struct Cell
+{
+	center: Point2<i32>,
+}
+
+impl Cell
+{
+	fn new(center: Point2<i32>, world: &mut hecs::World) -> Self
+	{
+		let world_center =
+			Point2::new((center.x * CELL_SIZE) as f32, (center.y * CELL_SIZE) as f32);
+		if center.x != 0 || center.y != 0
+		{
+			let mut rng = thread_rng();
+			let w = CELL_SIZE as f32 / 2. - 100.;
+
+			for _ in 0..3
+			{
+				let dx = world_center.x + rng.gen_range(-w..w);
+				let dy = world_center.y + rng.gen_range(-w..w);
+
+				for y in -1..=1
+				{
+					for x in -1..=1
+					{
+						world.spawn((
+							Enemy {
+								time_to_deaggro: 0.,
+								fire_delay: 0.25,
+							},
+							Position {
+								pos: Point3::new(dx + 50. * x as f32, 15., dy + 50. * y as f32),
+								dir: 0.,
+							},
+							TimeToMove { time_to_move: 0. },
+							Velocity {
+								vel: Vector3::new(0., 0., 0.),
+							},
+							Drawable {
+								kind: DrawKind::Enemy,
+							},
+							Target { pos: None },
+							Collision {
+								kind: CollisionKind::Enemy,
+							},
+							Stats::enemy_stats(),
+							Weapon {
+								time_to_fire: 0.,
+								range: 320.,
+							},
+							Health { health: 100. },
+						));
+					}
+				}
+			}
+		}
+
+		Self { center: center }
+	}
+
+	pub fn world_center(&self) -> Point3<f32>
+	{
+		Point3::new(
+			(self.center.x * CELL_SIZE) as f32,
+			0.,
+			(self.center.y * CELL_SIZE) as f32,
+		)
+	}
+
+	pub fn world_to_cell(pos: &Point3<f32>) -> Point2<i32>
+	{
+		let sz = CELL_SIZE as f32;
+		let x = pos.x + sz / 2.;
+		let y = pos.z + sz / 2.;
+		Point2::new((x / sz) as i32, (y / sz) as i32)
+	}
+
+	pub fn contains(&self, pos: &Point3<f32>) -> bool
+	{
+		self.center == Cell::world_to_cell(pos)
+	}
+}
+
 #[derive(Clone)]
 pub struct Position
 {
@@ -211,7 +298,7 @@ pub struct Health
 #[derive(Debug, Clone)]
 struct GridVertex
 {
-	branches: [Vec<(f32, f32)>; 3],
+	branches: [Vec<(f32, f32, f32)>; 3],
 }
 
 impl GridVertex
@@ -228,13 +315,15 @@ impl GridVertex
 			for j in 0..5
 			{
 				let mut x = j as f32 * 10. * theta.cos();
-				let mut y = j as f32 * 10. * theta.sin();
+				let mut z = j as f32 * 10. * theta.sin();
+				let mut y = 0.;
 				if j != 0 && j != 4
 				{
 					x += 4. * rng.gen_range(-1.0..1.0);
 					y += 4. * rng.gen_range(-1.0..1.0);
+					z += 4. * rng.gen_range(-1.0..1.0);
 				}
-				branches[i].push((x, y));
+				branches[i].push((x, y, z));
 			}
 		}
 
@@ -253,6 +342,7 @@ impl GridVertex
 			{
 				vn.0 = v1.0 * (1. - f) + v2.0 * f;
 				vn.1 = v1.1 * (1. - f) + v2.1 * f;
+				vn.2 = v1.2 * (1. - f) + v2.2 * f;
 			}
 		}
 		new
@@ -270,6 +360,8 @@ pub struct Map
 	mouse_state: [bool; 10],
 	mouse_pos: (i32, i32),
 	space_state: bool,
+
+	cells: Vec<Cell>,
 }
 
 impl Map
@@ -305,35 +397,13 @@ impl Map
 			Health { health: 100. },
 		));
 
-		for i in 0..7
+		let mut cells = vec![];
+		for y in -CELL_RADIUS..=CELL_RADIUS
 		{
-			world.spawn((
-				Enemy {
-					time_to_deaggro: 0.,
-					fire_delay: 0.25,
-				},
-				Position {
-					pos: Point3::new(300. + 50. * i as f32, 15., 0.),
-					dir: 0.,
-				},
-				TimeToMove { time_to_move: 0. },
-				Velocity {
-					vel: Vector3::new(0., 0., 0.),
-				},
-				Drawable {
-					kind: DrawKind::Enemy,
-				},
-				Target { pos: None },
-				Collision {
-					kind: CollisionKind::Enemy,
-				},
-				Stats::enemy_stats(),
-				Weapon {
-					time_to_fire: 0.,
-					range: 320.,
-				},
-				Health { health: 100. },
-			));
+			for x in -CELL_RADIUS..=CELL_RADIUS
+			{
+				cells.push(Cell::new(Point2::new(x, y), &mut world));
+			}
 		}
 
 		Self {
@@ -346,6 +416,7 @@ impl Map
 			mouse_state: [false; 10],
 			mouse_pos: (0, 0),
 			space_state: false,
+			cells: cells,
 		}
 	}
 
@@ -657,6 +728,67 @@ impl Map
 			}
 		}
 
+		// Cell changes
+		let mut new_cell_centers = vec![];
+		if let Ok(player_pos) = self.world.get::<Position>(self.player)
+		{
+			let player_cell = Cell::world_to_cell(&player_pos.pos);
+
+			let mut good_cells = vec![];
+
+			for cell in &self.cells
+			{
+				let disp = cell.center - player_cell;
+				if disp.x.abs() > CELL_RADIUS || disp.y.abs() > CELL_RADIUS
+				{
+					for (id, position) in self.world.query::<&Position>().iter()
+					{
+						if cell.contains(&position.pos)
+						{
+							to_die.push(id);
+						}
+					}
+					println!("Killed {}", cell.center);
+				}
+				else
+				{
+					good_cells.push(cell.clone())
+				}
+			}
+
+			self.cells.clear();
+
+			for dy in -CELL_RADIUS..=CELL_RADIUS
+			{
+				for dx in -CELL_RADIUS..=CELL_RADIUS
+				{
+					let cell_center = player_cell + Vector2::new(dx, dy);
+
+					let mut found = false;
+					for cell in &good_cells
+					{
+						if cell.center == cell_center
+						{
+							self.cells.push(cell.clone());
+							found = true;
+							break;
+						}
+					}
+
+					if !found
+					{
+						new_cell_centers.push(cell_center);
+						println!("New cell {}", cell_center);
+					}
+				}
+			}
+		}
+		for cell_center in new_cell_centers
+		{
+			self.cells.push(Cell::new(cell_center, &mut self.world));
+		}
+
+		// Remove dead entities
 		for id in to_die
 		{
 			self.world.despawn(id)?;
@@ -772,7 +904,7 @@ impl Map
 				//~ let vertex3 = GridVertex::new(seed3);
 				//~ let vertex4 = GridVertex::new(seed4);
 
-				let c1 = random_color(seed1);
+				let c1 = random_color(seed1, 0.5, 0.5);
 				//~ let c2 = random_color(seed2);
 				//~ let c3 = random_color(seed3);
 				//~ let c4 = random_color(seed4);
@@ -789,12 +921,12 @@ impl Map
 				{
 					for idx in 0..branch.len() - 1
 					{
-						for (x, y) in &branch[idx..idx + 2]
+						for (x, y, z) in &branch[idx..idx + 2]
 						{
 							vertices.push(Vertex {
 								x: x + shift_x,
-								y: 0.,
-								z: y + shift_y,
+								y: *y,
+								z: z + shift_y,
 								u: 0.,
 								v: 0.,
 								color: c,

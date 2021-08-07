@@ -47,10 +47,10 @@ pub fn camera_project(x: f32, y: f32, z: f32, player_z: f32) -> Isometry3<f32>
 	view
 }
 
-pub fn random_color(seed: u64) -> Color
+pub fn random_color(seed: u64, saturation: f32, value: f32) -> Color
 {
 	let mut rng = StdRng::seed_from_u64(seed);
-	Color::from_hsv(rng.gen_range(0. ..360.), 1., 1.)
+	Color::from_hsv(rng.gen_range(0. ..360.), saturation, value)
 }
 
 pub trait ColorExt
