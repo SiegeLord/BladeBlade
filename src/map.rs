@@ -3,7 +3,7 @@ use crate::game_state::{GameState, NextScreen};
 use crate::speech::get_speech;
 use crate::utils::{
 	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
-	random_color, ColorExt, Vec3D, DT, PI,
+	random_color, ColorExt, Vec2D, Vec3D, DT, PI,
 };
 use allegro::*;
 use allegro_font::*;
@@ -689,6 +689,15 @@ impl Map
 		}
 
 		state.cache_bitmap("data/face.png")?;
+		state.sfx.cache_sample("data/blade_blade.ogg")?;
+		state.sfx.cache_sample("data/ui.ogg")?;
+		state.sfx.cache_sample("data/hit.ogg")?;
+		state.sfx.cache_sample("data/blade_hit.ogg")?;
+		state.sfx.cache_sample("data/death.ogg")?;
+		state.sfx.cache_sample("data/death_monster1.ogg")?;
+		state.sfx.cache_sample("data/death_monster2.ogg")?;
+		state.sfx.cache_sample("data/laugh.ogg")?;
+		state.sfx.cache_sample("data/weapon.ogg")?;
 
 		Ok(Self {
 			world: world,
@@ -910,6 +919,12 @@ impl Map
 					time_to_move.time_to_move = state.time() + stats.cast_delay as f64;
 
 					new_bullets.push((position.pos, pos, stats.spell_damage));
+					
+					state.sfx.play_positional_sound(
+						"data/weapon.ogg",
+						Vec2D::new(position.pos.x, position.pos.z),
+						Vec2D::new(self.player_pos.x, self.player_pos.z),
+					)?;
 				}
 			}
 		}
@@ -959,6 +974,11 @@ impl Map
 					to_die.push(id);
 					life.life -= bullet.damage;
 					hits.push(player_pos.pos);
+					state.sfx.play_positional_sound(
+						"data/hit.ogg",
+						Vec2D::new(player_pos.pos.x, player_pos.pos.z),
+						Vec2D::new(self.player_pos.x, self.player_pos.z),
+					)?;
 				}
 			}
 		}
@@ -990,6 +1010,12 @@ impl Map
 				time_to_move.time_to_move = state.time() + stats.cast_delay as f64;
 				target.pos = None;
 				mana.mana -= stats.mana_cost;
+
+				state.sfx.play_positional_sound(
+					"data/blade_blade.ogg",
+					Vec2D::new(position.pos.x, position.pos.z),
+					Vec2D::new(self.player_pos.x, self.player_pos.z),
+				)?;
 			}
 			if state.time() > blade_blade.time_to_lose_blade
 			{
@@ -1012,6 +1038,11 @@ impl Map
 					{
 						hits.push(enemy_position.pos);
 						life.life -= stats.spell_damage;
+						state.sfx.play_positional_sound(
+							"data/blade_hit.ogg",
+							Vec2D::new(enemy_position.pos.x, enemy_position.pos.z),
+							Vec2D::new(self.player_pos.x, self.player_pos.z),
+						)?;
 					}
 				}
 			}
@@ -1036,11 +1067,29 @@ impl Map
 		}
 
 		// Life
-		for (id, life) in self.world.query::<&Life>().iter()
+		let mut rng = thread_rng();
+		for (id, (position, life)) in self.world.query::<(&Position, &Life)>().iter()
 		{
 			if life.life < 0.
 			{
 				to_die.push(id);
+
+				if id == self.player
+				{
+					state.sfx.play_positional_sound(
+						"data/death.ogg",
+						Vec2D::new(position.pos.x, position.pos.z),
+						Vec2D::new(self.player_pos.x, self.player_pos.z),
+					)?;
+				}
+				else
+				{
+					state.sfx.play_positional_sound(
+						["data/death_monster1.ogg", "data/death_monster2.ogg"][rng.gen_range(0..2)],
+						Vec2D::new(position.pos.x, position.pos.z),
+						Vec2D::new(self.player_pos.x, self.player_pos.z),
+					)?;
+				}
 			}
 		}
 
@@ -1073,6 +1122,8 @@ impl Map
 					reward_vec.sort_by_key(|r| r.kind as i32);
 					self.rewards.push(reward_vec);
 				}
+
+				state.sfx.play_sound("data/laugh.ogg")?;
 			}
 		}
 
@@ -1201,6 +1252,7 @@ impl Map
 						(self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
 					self.reward_selection =
 						(6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
+					state.sfx.play_sound("data/ui.ogg")?;
 				}
 			}
 			Event::MouseButtonUp { button, .. } =>
@@ -1227,7 +1279,8 @@ impl Map
 					{
 						state.paused = true;
 						self.old_state = self.state;
-						self.state = State::Restart
+						self.state = State::Restart;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 				}
 				KeyCode::Escape =>
@@ -1236,11 +1289,13 @@ impl Map
 					{
 						self.state = self.old_state;
 						state.paused = self.old_paused;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 					else if self.state == State::Restart
 					{
 						self.state = self.old_state;
 						state.paused = self.old_paused;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 					else if self.state == State::Normal
 					{
@@ -1249,10 +1304,12 @@ impl Map
 
 						state.paused = true;
 						self.state = State::Quit;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 					else if self.state == State::LevelUp && self.selection_made
 					{
 						self.selection_made = false;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 				}
 				KeyCode::Y =>
@@ -1261,15 +1318,18 @@ impl Map
 					{
 						ret = Some(NextScreen::Quit);
 						state.paused = false;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 					else if self.state == State::Restart
 					{
 						ret = Some(NextScreen::Game);
 						state.paused = false;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 					else if self.state == State::LevelUp && self.selection_made
 					{
 						apply_rewards = true;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 				}
 				KeyCode::N =>
@@ -1278,15 +1338,18 @@ impl Map
 					{
 						self.state = self.old_state;
 						state.paused = self.old_paused;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 					else if self.state == State::Restart
 					{
 						self.state = self.old_state;
 						state.paused = self.old_paused;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 					else if self.state == State::LevelUp && self.selection_made
 					{
 						self.selection_made = false;
+						state.sfx.play_sound("data/ui.ogg")?;
 					}
 				}
 				_ => (),
@@ -1808,14 +1871,7 @@ impl Map
 						}
 						else
 						{
-							if self.selection_made
-							{
-								Color::from_rgb_f(0.2, 0.2, 0.2)
-							}
-							else
-							{
-								Color::from_rgb_f(0.7, 0.7, 0.7)
-							}
+							Color::from_rgb_f(0.7, 0.7, 0.7)
 						},
 						x,
 						y + lh * j as f32,

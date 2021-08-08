@@ -122,7 +122,7 @@ impl Sfx
 		let sample = self.samples.get(name).unwrap();
 
 		let dist = (sound_pos - camera_pos).norm();
-		let volume = clamp(500000. / (dist * dist), 0., 1.);
+		let volume = clamp(50000. / (dist * dist), 0., 1.);
 		let pan = clamp((sound_pos.x - camera_pos.x) / 1000., -1., 1.);
 
 		let instance = self
