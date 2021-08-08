@@ -1,5 +1,6 @@
 use crate::error::Result;
 use crate::game_state::{GameState, NextScreen};
+use crate::speech::get_speech;
 use crate::utils::{
 	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
 	random_color, ColorExt, Vec3D, DT, PI,
@@ -729,7 +730,6 @@ impl Map
 				self.reward_selection =
 					(6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
 			}
-
 			return Ok(());
 		}
 
@@ -1193,6 +1193,14 @@ impl Map
 				if self.state == State::LevelUp
 				{
 					self.selection_made = true;
+					let cx = self.display_width / 2.;
+					let cy = self.display_height / 2.;
+
+					let dtheta = 2. * PI / 6.;
+					let mouse_theta =
+						(self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
+					self.reward_selection =
+						(6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
 				}
 			}
 			Event::MouseButtonUp { button, .. } =>
@@ -1755,6 +1763,31 @@ impl Map
 				Flag::zero(),
 			);
 
+			let mut level = 0;
+
+			if let Ok(experience) = self.world.get::<Experience>(self.player)
+			{
+				level = experience.level;
+			}
+
+			let mut text = &format!("You reached level {}!", level)[..];
+			let mut color = Color::from_rgb_f(1., 1., 1.);
+			if self.selection_made
+			{
+				let c = 0.6 + 0.4 * 0.5 * ((5. * state.core.get_time()).sin() + 1.) as f32;
+				color = Color::from_rgb_f(c, c, c);
+				text = "Confirm your selection: (Y)";
+			}
+
+			state.core.draw_text(
+				&self.ui_font,
+				color,
+				cx,
+				cy - 1.3 * r,
+				FontAlign::Centre,
+				text,
+			);
+
 			let dtheta = 2. * PI / 6.;
 			let lh = self.ui_font.get_line_height() as f32;
 
@@ -1792,18 +1825,14 @@ impl Map
 				}
 			}
 
-			if self.selection_made
-			{
-				let c = 0.6 + 0.4 * 0.5 * ((5. * state.core.get_time()).sin() + 1.) as f32;
-				state.core.draw_text(
-					&self.ui_font,
-					Color::from_rgb_f(c, c, c),
-					cx,
-					cy + r,
-					FontAlign::Centre,
-					"You sure? (Y/N)",
-				);
-			}
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(0.8, 0.2, 0.2),
+				cx,
+				cy + 1.3 * r,
+				FontAlign::Centre,
+				get_speech(level, self.seed),
+			);
 		}
 		else if self.state == State::Quit
 		{

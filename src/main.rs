@@ -7,6 +7,7 @@ mod error;
 mod game_state;
 mod map;
 mod sfx;
+mod speech;
 mod sprite;
 mod utils;
 
