@@ -6,3 +6,5 @@ https://freesound.org/people/the_yura/sounds/278858/
 https://freesound.org/people/InspectorJ/sounds/352206/
 https://freesound.org/people/spookymodem/sounds/249817/
 https://freesound.org/people/Nakhas/sounds/360409/
+https://freesound.org/people/Jamitch2/sounds/344698/
+https://freesound.org/people/InspectorJ/sounds/344270/

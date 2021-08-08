@@ -374,6 +374,10 @@ pub enum DrawKind
 	Enemy,
 	Bullet,
 	Hit,
+	Explosion
+	{
+		start_time: f64,
+	},
 }
 
 #[derive(Clone)]
@@ -437,6 +441,8 @@ pub struct Stats
 	pub life_regen: f32,
 	pub mana_regen: f32,
 	pub mana_cost: f32,
+	pub has_dash: bool,
+	pub has_explodey: bool,
 
 	pub effects: Vec<Effect>,
 }
@@ -481,6 +487,8 @@ impl Stats
 			life_regen: 1.,
 			mana_regen: 5.,
 			mana_cost: 10.,
+			has_dash: true,
+			has_explodey: true,
 
 			effects: vec![],
 		}
@@ -502,6 +510,8 @@ impl Stats
 			life_regen: 0.,
 			mana_regen: 10.,
 			mana_cost: 10.,
+			has_dash: false,
+			has_explodey: false,
 
 			effects: vec![],
 		}
@@ -523,6 +533,8 @@ impl Stats
 			life_regen: 10.,
 			mana_regen: 10.,
 			mana_cost: 10.,
+			has_dash: false,
+			has_explodey: false,
 
 			effects: vec![],
 		}
@@ -544,6 +556,8 @@ impl Stats
 			life_regen: 10.,
 			mana_regen: 10.,
 			mana_cost: 10.,
+			has_dash: false,
+			has_explodey: false,
 
 			effects: vec![],
 		}
@@ -774,6 +788,7 @@ impl Map
 		state.sfx.cache_sample("data/laugh.ogg")?;
 		state.sfx.cache_sample("data/weapon.ogg")?;
 		state.sfx.cache_sample("data/dash.ogg")?;
+		state.sfx.cache_sample("data/explosion.ogg")?;
 
 		Ok(Self {
 			world: world,
@@ -845,22 +860,25 @@ impl Map
 					self.world.get_mut::<Mana>(self.player),
 				)
 				{
-					let cost = 0.5 * stats.mana_cost;
-					if state.time() > dash.time_to_dash && mana.mana > cost
+					if stats.has_dash
 					{
-						dash.time_to_dash = state.time() + 1.5 * stats.skill_duration as f64;
-						let effect = Effect {
-							kind: EffectKind::Dash,
-							effect_over_time: state.time() + 0.1 * stats.skill_duration as f64,
-						};
-						stats.effects.push(effect);
-						mana.mana -= cost;
+						let cost = 0.5 * stats.mana_cost;
+						if state.time() > dash.time_to_dash && mana.mana > cost
+						{
+							dash.time_to_dash = state.time() + 1.5 * stats.skill_duration as f64;
+							let effect = Effect {
+								kind: EffectKind::Dash,
+								effect_over_time: state.time() + 0.1 * stats.skill_duration as f64,
+							};
+							stats.effects.push(effect);
+							mana.mana -= cost;
 
-						state.sfx.play_positional_sound(
-							"data/dash.ogg",
-							Vec2D::new(position.pos.x, position.pos.z),
-							Vec2D::new(self.player_pos.x, self.player_pos.z),
-						)?;
+							state.sfx.play_positional_sound(
+								"data/dash.ogg",
+								Vec2D::new(position.pos.x, position.pos.z),
+								Vec2D::new(self.player_pos.x, self.player_pos.z),
+							)?;
+						}
 					}
 				}
 			}
@@ -1200,20 +1218,37 @@ impl Map
 			}
 		}
 
-		// Experience on death
-		if let Ok(mut experience) = self.world.get_mut::<Experience>(self.player)
+		// Enemy on death effects
+		let mut explosions = vec![];
+		if let (Ok(stats), Ok(mut life), Ok(mut experience)) = (
+			self.world.get::<Stats>(self.player),
+			self.world.get_mut::<Life>(self.player),
+			self.world.get_mut::<Experience>(self.player),
+		)
 		{
-			for (_, (enemy, life)) in self.world.query::<(&Enemy, &Life)>().iter()
+			for (_, (enemy, position, enemy_stats, enemy_life)) in self
+				.world
+				.query::<(&Enemy, &Position, &Stats, &Life)>()
+				.iter()
 			{
-				if life.life < 0.
+				if enemy_life.life < 0.
 				{
 					experience.experience += enemy.experience;
+					if stats.has_explodey
+					{
+						explosions.push((
+							position.pos,
+							1.1 * stats.spell_damage * enemy_stats.max_life,
+							stats.area_of_effect,
+						));
+					}
 				}
 			}
 
 			if experience.experience >= level_to_experience(experience.level + 1)
 			{
 				experience.level += 1;
+				life.life = stats.max_life;
 				self.state = State::LevelUp;
 				self.selection_made = false;
 				state.paused = true;
@@ -1231,6 +1266,40 @@ impl Map
 				}
 
 				state.sfx.play_sound("data/laugh.ogg")?;
+			}
+		}
+
+		for (pos, damage, aoe) in explosions
+		{
+			self.world.spawn((
+				Position { pos: pos, dir: 0. },
+				Stats::bullet_stats(),
+				Drawable {
+					kind: DrawKind::Explosion {
+						start_time: state.time(),
+					},
+				},
+				TimeToDie {
+					time_to_die: state.time() + 0.3,
+				},
+			));
+
+			state.sfx.play_positional_sound(
+				"data/explosion.ogg",
+				Vec2D::new(pos.x, pos.z),
+				Vec2D::new(self.player_pos.x, self.player_pos.z),
+			)?;
+
+			for (_, (_, position, life, stats)) in self
+				.world
+				.query::<(&Enemy, &Position, &mut Life, &Stats)>()
+				.iter()
+			{
+				let disp = position.pos - pos;
+				if disp.norm() < aoe + stats.size
+				{
+					life.life -= damage;
+				}
 			}
 		}
 
@@ -1628,6 +1697,7 @@ impl Map
 		for (_, (position, drawable, stats)) in
 			self.world.query::<(&Position, &Drawable, &Stats)>().iter()
 		{
+			let stats = stats.apply_effects();
 			let pos = position.pos;
 			let dir = position.dir;
 
@@ -1643,10 +1713,19 @@ impl Map
 			{
 				for j in 0..2
 				{
+					let size = match drawable.kind
+					{
+						DrawKind::Explosion { start_time } =>
+						{
+							(1. + (state.time() - start_time) as f32) * stats.size
+						}
+						_ => stats.size,
+					};
+
 					let theta = 12. * PI * (i + j) as f32 / 40.;
 					let dx = theta / 3.;
-					let dz = stats.size * (1. - i as f32 / 40.) * theta.sin();
-					let dy = stats.size * (1. - i as f32 / 40.) * theta.cos();
+					let dz = size * (1. - i as f32 / 40.) * theta.sin();
+					let dy = size * (1. - i as f32 / 40.) * theta.cos();
 
 					let color = match drawable.kind
 					{
@@ -1654,6 +1733,7 @@ impl Map
 						DrawKind::Enemy => Color::from_rgb_f(1., 0., i as f32 / 40.),
 						DrawKind::Bullet => Color::from_rgb_f(0.2, 0.2, 1.),
 						DrawKind::Hit => Color::from_rgb_f(1., 1., 0.),
+						DrawKind::Explosion { .. } => Color::from_rgb_f(1., 1., 0.),
 					};
 
 					let vtx_pos = Point2::new(dx, dz);
@@ -1662,7 +1742,7 @@ impl Map
 
 					vertices.push(Vertex {
 						x: pos.x + vtx_pos.x,
-						y: stats.size + dy,
+						y: size + dy,
 						z: pos.z + vtx_pos.y,
 						u: 0.,
 						v: 0.,
@@ -1885,7 +1965,7 @@ impl Map
 			if let Some((life, enemy, stats)) =
 				self.world.query_one::<(&Life, &Enemy, &Stats)>(id)?.get()
 			{
-				let f = life.life / stats.max_life;
+				let f = max(0., life.life / stats.max_life);
 
 				let w = 400.;
 				let h = 32.;
