@@ -6,6 +6,7 @@
 mod error;
 mod game_state;
 mod map;
+mod menu;
 mod sfx;
 mod speech;
 mod sprite;
@@ -76,12 +77,12 @@ fn real_main() -> Result<()>
 	let mut draw = true;
 	let mut rng = thread_rng();
 
-	let mut map = map::Map::new(
+	let mut menu = menu::Menu::new(
 		&mut state,
-		rng.gen_range(0..16000),
 		display.get_width() as f32,
 		display.get_height() as f32,
 	)?;
+	let mut map: Option<map::Map> = None;
 
 	timer.start();
 	while !quit
@@ -93,7 +94,14 @@ fn real_main() -> Result<()>
 			state.core.clear_to_color(Color::from_rgb_f(0., 0., 0.2));
 			state.core.clear_depth_buffer(1.);
 
-			map.draw(&state)?;
+			if let Some(map) = &mut map
+			{
+				map.draw(&state)?;
+			}
+			else
+			{
+				menu.draw(&state)?;
+			}
 
 			state.core.flip_display();
 			let end = state.core.get_time();
@@ -104,18 +112,31 @@ fn real_main() -> Result<()>
 		}
 
 		let event = queue.wait_for_event();
-		if let Some(next_screen) = map.input(&event, &mut state)?
+		let next_screen;
+		if let Some(map) = &mut map
+		{
+			next_screen = map.input(&event, &mut state)?;
+		}
+		else
+		{
+			next_screen = menu.input(&event, &mut state)?;
+		}
+		if let Some(next_screen) = next_screen
 		{
 			match next_screen
 			{
 				NextScreen::Game =>
 				{
-					map = map::Map::new(
+					map = Some(map::Map::new(
 						&mut state,
 						rng.gen_range(0..16000),
 						display.get_width() as f32,
 						display.get_height() as f32,
-					)?;
+					)?);
+				}
+				NextScreen::Menu =>
+				{
+					map = None;
 				}
 				NextScreen::Quit =>
 				{
@@ -131,7 +152,14 @@ fn real_main() -> Result<()>
 				//~ let start = state.core.get_time();
 				//~ let end = state.core.get_time();
 				//~ println!("{}", 1. / (end - start));
-				map.logic(&mut state)?;
+				if let Some(map) = &mut map
+				{
+					map.logic(&mut state)?;
+				}
+				else
+				{
+					menu.logic(&mut state)?;
+				}
 				state.sfx.update_sounds()?;
 
 				if !state.paused

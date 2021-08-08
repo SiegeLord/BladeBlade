@@ -1527,7 +1527,7 @@ impl Map
 				{
 					if self.state == State::Quit
 					{
-						ret = Some(NextScreen::Quit);
+						ret = Some(NextScreen::Menu);
 						state.paused = false;
 						state.sfx.play_sound("data/ui.ogg")?;
 					}

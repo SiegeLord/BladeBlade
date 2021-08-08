@@ -14,6 +14,7 @@ use std::fmt;
 pub enum NextScreen
 {
 	Game,
+	Menu,
 	Quit,
 }
 
