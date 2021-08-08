@@ -382,6 +382,45 @@ pub struct Drawable
 	kind: DrawKind,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub enum EffectKind
+{
+	Dash,
+}
+
+#[derive(Debug, Clone)]
+pub struct Effect
+{
+	pub effect_over_time: f64,
+	pub kind: EffectKind,
+}
+
+impl Effect
+{
+	pub fn apply(&self, stats: &mut Stats)
+	{
+		match self.kind
+		{
+			EffectKind::Dash =>
+			{
+				stats.speed *= 10.;
+			}
+		}
+	}
+
+	pub fn is_dash(&self) -> bool
+	{
+		self.kind == EffectKind::Dash
+	}
+}
+
+#[derive(Clone)]
+pub struct Dash
+{
+	pub time_to_dash: f64,
+	pub time_to_spawn_afterimage: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct Stats
 {
@@ -398,10 +437,34 @@ pub struct Stats
 	pub life_regen: f32,
 	pub mana_regen: f32,
 	pub mana_cost: f32,
+
+	pub effects: Vec<Effect>,
 }
 
 impl Stats
 {
+	fn apply_effects(&self) -> Stats
+	{
+		let mut new_stats = self.clone();
+		for effect in &self.effects
+		{
+			effect.apply(&mut new_stats);
+		}
+		new_stats
+	}
+
+	fn is_dashing(&self) -> bool
+	{
+		for effect in &self.effects
+		{
+			if effect.is_dash()
+			{
+				return true;
+			}
+		}
+		false
+	}
+
 	fn player_stats() -> Self
 	{
 		Self {
@@ -418,6 +481,8 @@ impl Stats
 			life_regen: 1.,
 			mana_regen: 5.,
 			mana_cost: 10.,
+
+			effects: vec![],
 		}
 	}
 
@@ -437,6 +502,8 @@ impl Stats
 			life_regen: 0.,
 			mana_regen: 10.,
 			mana_cost: 10.,
+
+			effects: vec![],
 		}
 	}
 
@@ -456,6 +523,8 @@ impl Stats
 			life_regen: 10.,
 			mana_regen: 10.,
 			mana_cost: 10.,
+
+			effects: vec![],
 		}
 	}
 
@@ -475,6 +544,8 @@ impl Stats
 			life_regen: 10.,
 			mana_regen: 10.,
 			mana_cost: 10.,
+
+			effects: vec![],
 		}
 	}
 }
@@ -677,6 +748,10 @@ impl Map
 				level: 1,
 				experience: level_to_experience(1),
 			},
+			Dash {
+				time_to_dash: 0.,
+				time_to_spawn_afterimage: 0.,
+			},
 		));
 
 		let mut cells = vec![];
@@ -698,6 +773,7 @@ impl Map
 		state.sfx.cache_sample("data/death_monster2.ogg")?;
 		state.sfx.cache_sample("data/laugh.ogg")?;
 		state.sfx.cache_sample("data/weapon.ogg")?;
+		state.sfx.cache_sample("data/dash.ogg")?;
 
 		Ok(Self {
 			world: world,
@@ -747,7 +823,7 @@ impl Map
 			return Ok(());
 		}
 
-		if self.mouse_state[1]
+		if self.mouse_state[1] || self.mouse_state[2]
 		{
 			let (x, y) = self.mouse_pos;
 			if let Ok(mut target) = self.world.get_mut::<Target>(self.player)
@@ -759,6 +835,35 @@ impl Map
 				let ground_pos = get_ground_from_screen(fx, -fy, self.project, camera);
 				target.pos = Some(ground_pos);
 			}
+
+			if self.mouse_state[2]
+			{
+				if let (Ok(position), Ok(mut stats), Ok(mut dash), Ok(mut mana)) = (
+					self.world.get_mut::<Position>(self.player),
+					self.world.get_mut::<Stats>(self.player),
+					self.world.get_mut::<Dash>(self.player),
+					self.world.get_mut::<Mana>(self.player),
+				)
+				{
+					let cost = 0.5 * stats.mana_cost;
+					if state.time() > dash.time_to_dash && mana.mana > cost
+					{
+						dash.time_to_dash = state.time() + 1.5 * stats.skill_duration as f64;
+						let effect = Effect {
+							kind: EffectKind::Dash,
+							effect_over_time: state.time() + 0.1 * stats.skill_duration as f64,
+						};
+						stats.effects.push(effect);
+						mana.mana -= cost;
+
+						state.sfx.play_positional_sound(
+							"data/dash.ogg",
+							Vec2D::new(position.pos.x, position.pos.z),
+							Vec2D::new(self.player_pos.x, self.player_pos.z),
+						)?;
+					}
+				}
+			}
 		}
 
 		// position -> target
@@ -767,6 +872,8 @@ impl Map
 			.query::<(&Position, &mut Velocity, &mut Target, &Stats)>()
 			.iter()
 		{
+			let stats = stats.apply_effects();
+
 			//~ println!("{:?}", id);
 			let pos = position.pos;
 			let mut arrived = false;
@@ -919,7 +1026,7 @@ impl Map
 					time_to_move.time_to_move = state.time() + stats.cast_delay as f64;
 
 					new_bullets.push((position.pos, pos, stats.spell_damage));
-					
+
 					state.sfx.play_positional_sound(
 						"data/weapon.ogg",
 						Vec2D::new(position.pos.x, position.pos.z),
@@ -1125,6 +1232,41 @@ impl Map
 
 				state.sfx.play_sound("data/laugh.ogg")?;
 			}
+		}
+
+		// Effect expiration
+		for (_, stats) in self.world.query::<&mut Stats>().iter()
+		{
+			stats.effects.retain(|e| state.time() < e.effect_over_time);
+		}
+
+		// Dash after-images
+		let mut after_image = None;
+		for (_, (position, dash, stats)) in
+			self.world.query::<(&Position, &mut Dash, &Stats)>().iter()
+		{
+			if stats.is_dashing()
+			{
+				if state.time() > dash.time_to_spawn_afterimage
+				{
+					after_image = Some((position.clone(), stats.clone()));
+					dash.time_to_spawn_afterimage = state.time() + 0.01;
+				}
+			}
+		}
+
+		if let Some((position, stats)) = after_image
+		{
+			self.world.spawn((
+				position,
+				stats,
+				Drawable {
+					kind: DrawKind::Player,
+				},
+				TimeToDie {
+					time_to_die: state.time() + 0.3,
+				},
+			));
 		}
 
 		// Life/mana regen
