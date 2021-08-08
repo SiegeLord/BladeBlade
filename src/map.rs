@@ -574,9 +574,9 @@ impl GridVertex
 				let mut y = 0.;
 				if j != 0 && j != 4
 				{
-					x += 12. * rng.gen_range(-1.0..1.0);
+					x += 24. * rng.gen_range(-1.0..1.0);
 					y += 4. * rng.gen_range(-1.0..1.0);
-					z += 12. * rng.gen_range(-1.0..1.0);
+					z += 24. * rng.gen_range(-1.0..1.0);
 				}
 				branches[i].push((x, y, z));
 			}
@@ -641,7 +641,7 @@ pub struct Map
 impl Map
 {
 	pub fn new(
-		state: &GameState, seed: u64, display_width: f32, display_height: f32,
+		state: &mut GameState, seed: u64, display_width: f32, display_height: f32,
 	) -> Result<Self>
 	{
 		let mut world = hecs::World::default();
@@ -686,6 +686,8 @@ impl Map
 				cells.push(Cell::new(Point2::new(x, y), seed, &mut world));
 			}
 		}
+
+		state.cache_bitmap("data/face.png")?;
 
 		Ok(Self {
 			world: world,
@@ -1188,15 +1190,14 @@ impl Map
 			{
 				self.mouse_pos = (*x, *y);
 				self.mouse_state[*button as usize] = true;
-			}
-			Event::MouseButtonUp { button, .. } =>
-			{
-				self.mouse_state[*button as usize] = false;
-
 				if self.state == State::LevelUp
 				{
 					self.selection_made = true;
 				}
+			}
+			Event::MouseButtonUp { button, .. } =>
+			{
+				self.mouse_state[*button as usize] = false;
 			}
 			Event::MouseAxes { x, y, .. } =>
 			{
@@ -1207,14 +1208,9 @@ impl Map
 				KeyCode::Space => self.space_state = true,
 				KeyCode::P =>
 				{
-					state.paused = !state.paused;
-					if self.state == State::Normal
+					if let Ok(mut experience) = self.world.get_mut::<Experience>(self.player)
 					{
-						self.state = State::LevelUp;
-					}
-					else
-					{
-						self.state = State::Normal;
+						experience.experience = level_to_experience(experience.level + 1);
 					}
 				}
 				KeyCode::R =>
@@ -1747,6 +1743,18 @@ impl Map
 				Color::from_rgba_f(0., 0., 0., 0.5),
 			);
 
+			let bmp = state.get_bitmap("data/face.png").unwrap();
+			let bw = bmp.get_width() as f32;
+			let bh = bmp.get_height() as f32;
+			let r = 300.;
+			state.core.draw_tinted_bitmap(
+				bmp,
+				Color::from_rgb_f(0.8, 0.2, 0.2),
+				cx - bw / 2.,
+				cy - bh / 2.,
+				Flag::zero(),
+			);
+
 			let dtheta = 2. * PI / 6.;
 			let lh = self.ui_font.get_line_height() as f32;
 
@@ -1754,8 +1762,8 @@ impl Map
 			{
 				let theta = dtheta * i as f32;
 
-				let x = cx + theta.cos() * 300.;
-				let y = cy + theta.sin() * 300.;
+				let x = cx + theta.cos() * r;
+				let y = cy + theta.sin() * r;
 
 				for (j, reward) in rewards.iter().enumerate()
 				{
@@ -1767,7 +1775,14 @@ impl Map
 						}
 						else
 						{
-							Color::from_rgb_f(0.7, 0.7, 0.7)
+							if self.selection_made
+							{
+								Color::from_rgb_f(0.2, 0.2, 0.2)
+							}
+							else
+							{
+								Color::from_rgb_f(0.7, 0.7, 0.7)
+							}
 						},
 						x,
 						y + lh * j as f32,
@@ -1779,13 +1794,14 @@ impl Map
 
 			if self.selection_made
 			{
+				let c = 0.6 + 0.4 * 0.5 * ((5. * state.core.get_time()).sin() + 1.) as f32;
 				state.core.draw_text(
 					&self.ui_font,
-					Color::from_rgb_f(1., 1., 1.),
+					Color::from_rgb_f(c, c, c),
 					cx,
-					cy - lh / 2.,
+					cy + r,
 					FontAlign::Centre,
-					"You sure! (Y/N)",
+					"You sure? (Y/N)",
 				);
 			}
 		}

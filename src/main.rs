@@ -76,7 +76,7 @@ fn real_main() -> Result<()>
 	let mut rng = thread_rng();
 
 	let mut map = map::Map::new(
-		&state,
+		&mut state,
 		rng.gen_range(0..16000),
 		display.get_width() as f32,
 		display.get_height() as f32,
@@ -110,7 +110,7 @@ fn real_main() -> Result<()>
 				NextScreen::Game =>
 				{
 					map = map::Map::new(
-						&state,
+						&mut state,
 						rng.gen_range(0..16000),
 						display.get_width() as f32,
 						display.get_height() as f32,
