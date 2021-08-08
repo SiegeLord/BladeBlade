@@ -28,6 +28,15 @@ enum RewardKind
 	Life = 0,
 	Mana,
 	Speed,
+	CastDelay,
+	LifeRegen,
+	ManaRegen,
+	AreaOfEffect,
+	ManaCost,
+	SpellDamage,
+	ExplodeOnDeath,
+	Dash,
+	SkillDuration,
 	NumRewards,
 }
 
@@ -40,13 +49,21 @@ impl RewardKind
 
 	fn gen_value(&self, tier: i32, rng: &mut impl Rng) -> i32
 	{
-		if rng.gen::<bool>()
+		match *self
 		{
-			rng.gen_range(1..5 * (tier + 1))
-		}
-		else
-		{
-			rng.gen_range(-5 * (tier + 1)..0)
+			RewardKind::ExplodeOnDeath => 100,
+			RewardKind::Dash => 50,
+			_ =>
+			{
+				let max_value = 5. * 1.1_f32.powf(tier as f32);
+				let min_value = 1. * 1.1_f32.powf(tier as f32 - 1.);
+				let mut value = rng.gen_range(min_value as i32..max_value as i32);
+				if rng.gen::<bool>()
+				{
+					value = -value;
+				}
+				value
+			}
 		}
 	}
 
@@ -57,6 +74,15 @@ impl RewardKind
 			0 => Some(RewardKind::Life),
 			1 => Some(RewardKind::Mana),
 			2 => Some(RewardKind::Speed),
+			3 => Some(RewardKind::CastDelay),
+			4 => Some(RewardKind::LifeRegen),
+			5 => Some(RewardKind::ManaRegen),
+			6 => Some(RewardKind::AreaOfEffect),
+			7 => Some(RewardKind::ManaCost),
+			8 => Some(RewardKind::SpellDamage),
+			9 => Some(RewardKind::ExplodeOnDeath),
+			10 => Some(RewardKind::Dash),
+			11 => Some(RewardKind::SkillDuration),
 			_ => None,
 		}
 	}
@@ -65,8 +91,19 @@ impl RewardKind
 	{
 		match *self
 		{
-			RewardKind::Life | RewardKind::Mana | RewardKind::Speed => 1,
-			_ => 0,
+			RewardKind::Life => 30,
+			RewardKind::Mana => 30,
+			RewardKind::Speed => 10,
+			RewardKind::CastDelay => 2,
+			RewardKind::LifeRegen => 10,
+			RewardKind::ManaRegen => 10,
+			RewardKind::AreaOfEffect => 20,
+			RewardKind::ManaCost => 10,
+			RewardKind::SpellDamage => 30,
+			RewardKind::ExplodeOnDeath => 1,
+			RewardKind::Dash => 5,
+			RewardKind::SkillDuration => 15,
+			RewardKind::NumRewards => 0,
 		}
 	}
 
@@ -78,8 +115,36 @@ impl RewardKind
 		{
 			RewardKind::Life => format!("Life {}{}", plus_sign(value), value),
 			RewardKind::Mana => format!("Mana {}{}", plus_sign(value), value),
-			RewardKind::Speed => format!("Speed {}{}", plus_sign(value), value),
+			RewardKind::Speed => format!("Move speed {}{}", plus_sign(value), value),
+			RewardKind::CastDelay => format!("Cast delay {}{}", plus_sign(-value), -value),
+			RewardKind::LifeRegen => format!("% life regen {}{}", plus_sign(value), value),
+			RewardKind::ManaRegen => format!("% mana regen {}{}", plus_sign(value), value),
+			RewardKind::AreaOfEffect => format!("Area of effect {}{}", plus_sign(value), value),
+			RewardKind::ManaCost => format!("Mana cost {}{}", plus_sign(-value), -value),
+			RewardKind::SpellDamage => format!("Spell damage {}{}", plus_sign(value), value),
+			RewardKind::ExplodeOnDeath => format!("Enemies explode on death"),
+			RewardKind::Dash => format!("You can dash"),
+			RewardKind::SkillDuration => format!("Skill duration {}{}", plus_sign(value), value),
 			_ => "ERROR".into(),
+		}
+	}
+
+	fn color(&self, value: i32) -> Color
+	{
+		match *self
+		{
+			RewardKind::ExplodeOnDeath | RewardKind::Dash => Color::from_rgb_f(1., 0.8, 0.3),
+			_ =>
+			{
+				if self.is_positive(value)
+				{
+					Color::from_rgb_f(0.8, 0.8, 1.)
+				}
+				else
+				{
+					Color::from_rgb_f(1., 0.4, 0.4)
+				}
+			}
 		}
 	}
 
@@ -98,6 +163,46 @@ impl RewardKind
 			RewardKind::Speed =>
 			{
 				stats.speed += value as f32;
+			}
+			RewardKind::CastDelay =>
+			{
+				stats.cast_delay -= value as f32 / 100.;
+				stats.cast_delay = max(0.05, stats.cast_delay);
+			}
+			RewardKind::LifeRegen =>
+			{
+				stats.life_regen += value as f32;
+				stats.life_regen = max(0., stats.life_regen);
+			}
+			RewardKind::ManaRegen =>
+			{
+				stats.mana_regen += value as f32;
+				stats.mana_regen = max(1., stats.mana_regen);
+			}
+			RewardKind::AreaOfEffect =>
+			{
+				stats.area_of_effect += value as f32;
+			}
+			RewardKind::ManaCost =>
+			{
+				stats.mana_cost -= value as f32 / 10.;
+				stats.mana_cost = max(0., stats.mana_cost);
+			}
+			RewardKind::SpellDamage =>
+			{
+				stats.spell_damage += value as f32 / 3.;
+			}
+			RewardKind::ExplodeOnDeath =>
+			{
+				stats.has_explodey = true;
+			}
+			RewardKind::Dash =>
+			{
+				stats.has_dash = true;
+			}
+			RewardKind::SkillDuration =>
+			{
+				stats.skill_duration += value as f32 / 100.;
 			}
 			_ => unreachable!(),
 		}
@@ -150,6 +255,11 @@ impl Reward
 	fn description(&self) -> String
 	{
 		self.kind.description(self.value)
+	}
+
+	fn color(&self) -> Color
+	{
+		self.kind.color(self.value)
 	}
 
 	fn apply(&self, stats: &mut Stats)
@@ -487,8 +597,8 @@ impl Stats
 			life_regen: 1.,
 			mana_regen: 5.,
 			mana_cost: 10.,
-			has_dash: true,
-			has_explodey: true,
+			has_dash: false,
+			has_explodey: false,
 
 			effects: vec![],
 		}
@@ -803,7 +913,9 @@ impl Map
 			cells: cells,
 			ui_font: state
 				.ttf
-				.load_ttf_font("data/Energon.ttf", 16, Flag::zero())
+				//~ .load_ttf_font("data/Energon.ttf", 16, Flag::zero())
+				//~ .load_ttf_font("data/DejaVuSans.ttf", 20, Flag::zero())
+				.load_ttf_font("data/AvQest.ttf", 24, Flag::zero())
 				.map_err(|_| "Couldn't load 'data/Energon.ttf'".to_string())?,
 			state: State::Normal,
 			old_state: State::Normal,
@@ -1220,9 +1332,10 @@ impl Map
 
 		// Enemy on death effects
 		let mut explosions = vec![];
-		if let (Ok(stats), Ok(mut life), Ok(mut experience)) = (
+		if let (Ok(stats), Ok(mut life), Ok(mut mana), Ok(mut experience)) = (
 			self.world.get::<Stats>(self.player),
 			self.world.get_mut::<Life>(self.player),
+			self.world.get_mut::<Mana>(self.player),
 			self.world.get_mut::<Experience>(self.player),
 		)
 		{
@@ -1238,7 +1351,7 @@ impl Map
 					{
 						explosions.push((
 							position.pos,
-							1.1 * stats.spell_damage * enemy_stats.max_life,
+							0.01 * stats.spell_damage * enemy_stats.max_life,
 							stats.area_of_effect,
 						));
 					}
@@ -1249,6 +1362,7 @@ impl Map
 			{
 				experience.level += 1;
 				life.life = stats.max_life;
+				mana.mana = stats.max_mana;
 				self.state = State::LevelUp;
 				self.selection_made = false;
 				state.paused = true;
@@ -1257,9 +1371,29 @@ impl Map
 				for _ in 0..6
 				{
 					let mut reward_vec = vec![];
-					for _ in 0..2
+					'restart: loop
 					{
-						reward_vec.push(Reward::new(0, &reward_vec[..]))
+						reward_vec.clear();
+						let mut total_value = 0;
+						for _ in 0..2
+						{
+							let reward = Reward::new(experience.level, &reward_vec[..]);
+							total_value += reward.value;
+							if reward.kind == RewardKind::ExplodeOnDeath && stats.has_explodey
+							{
+								continue 'restart;
+							}
+							if reward.kind == RewardKind::Dash && stats.has_dash
+							{
+								continue 'restart;
+							}
+							reward_vec.push(reward);
+						}
+						if total_value.abs() > (10. * 1.1_f32.powi(experience.level)) as i32
+						{
+							continue 'restart;
+						}
+						break;
 					}
 					reward_vec.sort_by_key(|r| r.kind as i32);
 					self.rewards.push(reward_vec);
@@ -1585,6 +1719,7 @@ impl Map
 				{
 					reward.apply(&mut stats);
 				}
+				dbg!(&*stats);
 			}
 			self.state = State::Normal;
 			state.paused = false;
@@ -1837,6 +1972,8 @@ impl Map
 		state.core.use_transform(&Transform::identity());
 		state.core.set_depth_test(None);
 
+		let lh = self.ui_font.get_line_height() as f32;
+
 		// Life/Mana
 
 		let r = 125.;
@@ -1855,7 +1992,7 @@ impl Map
 				&self.ui_font,
 				Color::from_rgb_f(1., 1., 1.),
 				dx,
-				dy - r * 1.2,
+				dy - r * 1.2 - lh / 2.,
 				FontAlign::Centre,
 				&format!(
 					"{} / {}",
@@ -1881,7 +2018,7 @@ impl Map
 				&self.ui_font,
 				Color::from_rgb_f(1., 1., 1.),
 				dx,
-				dy - r * 1.2,
+				dy - r * 1.2 - lh / 2.,
 				FontAlign::Centre,
 				&format!(
 					"{} / {}",
@@ -2012,8 +2149,6 @@ impl Map
 				Color::from_rgba_f(0., 0., 0., 0.5),
 			);
 
-			let lh = self.ui_font.get_line_height() as f32;
-
 			state.core.draw_text(
 				&self.ui_font,
 				Color::from_rgb_f(1., 1., 1.),
@@ -2074,7 +2209,6 @@ impl Map
 			);
 
 			let dtheta = 2. * PI / 6.;
-			let lh = self.ui_font.get_line_height() as f32;
 
 			for (i, rewards) in self.rewards.iter().enumerate()
 			{
@@ -2087,17 +2221,27 @@ impl Map
 				{
 					state.core.draw_text(
 						&self.ui_font,
-						if i as i32 == self.reward_selection
+						reward.color().interpolate(
+							Color::from_rgb_f(0., 0., 0.),
+							if i as i32 == self.reward_selection
+							{
+								0.
+							}
+							else
+							{
+								0.5
+							},
+						),
+						x,
+						y + lh * j as f32 - lh,
+						if theta.cos() > 0.
 						{
-							Color::from_rgb_f(1., 1., 1.)
+							FontAlign::Left
 						}
 						else
 						{
-							Color::from_rgb_f(0.7, 0.7, 0.7)
+							FontAlign::Right
 						},
-						x,
-						y + lh * j as f32,
-						FontAlign::Centre,
 						&reward.description(),
 					);
 				}
@@ -2122,8 +2266,6 @@ impl Map
 				Color::from_rgba_f(0., 0., 0., 0.5),
 			);
 
-			let lh = self.ui_font.get_line_height() as f32;
-
 			state.core.draw_text(
 				&self.ui_font,
 				Color::from_rgb_f(1., 1., 1.),
@@ -2142,8 +2284,6 @@ impl Map
 				self.display_height,
 				Color::from_rgba_f(0., 0., 0., 0.5),
 			);
-
-			let lh = self.ui_font.get_line_height() as f32;
 
 			state.core.draw_text(
 				&self.ui_font,

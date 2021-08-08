@@ -21,6 +21,8 @@ impl Menu
 	{
 		state.cache_bitmap("data/logo.png")?;
 
+		state.sfx.cache_sample("data/ui.ogg")?;
+
 		Ok(Self {
 			display_width: display_width,
 			display_height: display_height,
@@ -36,7 +38,7 @@ impl Menu
 		Ok(())
 	}
 
-	pub fn input(&mut self, event: &Event, _state: &mut GameState) -> Result<Option<NextScreen>>
+	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<Option<NextScreen>>
 	{
 		let mut ret = None;
 		match event
@@ -44,6 +46,7 @@ impl Menu
 			Event::MouseButtonDown { .. } =>
 			{
 				ret = Some(NextScreen::Game);
+				state.sfx.play_sound("data/ui.ogg")?;
 			}
 			Event::KeyDown { keycode, .. } => match *keycode
 			{
@@ -54,6 +57,7 @@ impl Menu
 				KeyCode::Space =>
 				{
 					ret = Some(NextScreen::Game);
+					state.sfx.play_sound("data/ui.ogg")?;
 				}
 				_ => (),
 			},
