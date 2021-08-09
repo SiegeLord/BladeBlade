@@ -4,7 +4,7 @@ use crate::spatial_grid::SpatialGrid;
 use crate::speech::get_speech;
 use crate::utils::{
 	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
-	random_color, sigmoid, ColorExt, Vec2D, Vec3D, DT, PI,
+	random_color, sigmoid, ColorExt, Vec2D, Vec3D, DT, PI, load_obj,
 };
 use allegro::*;
 use allegro_font::*;
@@ -137,8 +137,8 @@ impl RewardKind
 			RewardKind::Mana => 30,
 			RewardKind::Speed => 10,
 			RewardKind::CastDelay => 2,
-			RewardKind::LifeRegen => 10,
-			RewardKind::ManaRegen => 10,
+			RewardKind::LifeRegen => 15,
+			RewardKind::ManaRegen => 15,
 			RewardKind::AreaOfEffect => 20,
 			RewardKind::ManaCost => 10,
 			RewardKind::SpellDamage => 30,
@@ -197,10 +197,12 @@ impl RewardKind
 			RewardKind::Life =>
 			{
 				stats.max_life += value as f32;
+				stats.max_life = max(1., stats.max_life);
 			}
 			RewardKind::Mana =>
 			{
 				stats.max_mana += value as f32;
+				stats.max_mana = max(1., stats.max_mana);
 			}
 			RewardKind::Speed =>
 			{
@@ -223,7 +225,8 @@ impl RewardKind
 			}
 			RewardKind::AreaOfEffect =>
 			{
-				stats.area_of_effect += value as f32;
+				// The AoE nerf.
+				stats.area_of_effect = (stats.area_of_effect.powi(2) + value as f32).sqrt();
 			}
 			RewardKind::ManaCost =>
 			{
@@ -245,6 +248,7 @@ impl RewardKind
 			RewardKind::SkillDuration =>
 			{
 				stats.skill_duration += value as f32 / 100.;
+				stats.skill_duration = max(0., stats.skill_duration);
 			}
 			_ => unreachable!(),
 		}
@@ -348,7 +352,7 @@ impl Cell
 			}
 
 			let level = max(1, -center.y);
-			let spawn_prob = sigmoid((level as f32 - 20.) / 10.);
+			let spawn_prob = sigmoid((level as f32 - 20.) / 5.);
 
 			let mut mob_kind = EnemyKind::Normal;
 			let mut boss_kind = EnemyKind::Normal;
@@ -385,7 +389,7 @@ impl Cell
 					{
 						EnemyKind::Normal => 1.,
 						EnemyKind::Magic => 3.,
-						EnemyKind::Rare => 10.,
+						EnemyKind::Rare => 12.,
 					};
 
 					let name = match kind
@@ -420,7 +424,7 @@ impl Cell
 								time_to_deaggro: 0.,
 								fire_delay: 1.,
 								name: name,
-								experience: (exp_bonus * 1000. * 1.1_f32.powi(level)) as i32,
+								experience: (exp_bonus * 1000. * 1.3_f32.powi(level)) as i32,
 								level: level,
 							},
 							Position {
@@ -590,6 +594,7 @@ pub struct Collision
 pub enum DrawKind
 {
 	Player,
+	AfterImage,
 	Enemy(EnemyKind),
 	Bullet(f32),
 	Hit,
@@ -724,7 +729,7 @@ impl Stats
 	fn player_stats() -> Self
 	{
 		Self {
-			speed: 2000.,
+			speed: 300.,
 			aggro_range: 100.,
 			close_enough_range: 0.,
 			size: 20.,
@@ -737,8 +742,8 @@ impl Stats
 			life_regen: 1.,
 			mana_regen: 5.,
 			mana_cost: 10.,
-			has_dash: true,
-			has_explodey: true,
+			has_dash: false,
+			has_explodey: false,
 			proj_multi: 1,
 			proj_speed: 1.,
 
@@ -812,7 +817,7 @@ impl Stats
 			cast_delay: 0.5 / f2,
 			skill_duration: 1.,
 			area_of_effect: 100.,
-			spell_damage: 1.5 * f,
+			spell_damage: 1. * f,
 			max_life: max_life,
 			max_mana: 100.,
 			life_regen: 0.,
@@ -1044,6 +1049,9 @@ pub struct Map
 	world: hecs::World,
 	player: hecs::Entity,
 	player_pos: Point3<f32>,
+	player_level: i32,
+	player_kills: i32,
+	player_blades: i32,
 	project: Perspective3<f32>,
 	display_width: f32,
 	display_height: f32,
@@ -1065,6 +1073,13 @@ pub struct Map
 	time_to_hide_dash: f64,
 
 	seed: u64,
+	
+	player_obj: Vec<[Point3<f32>; 2]>,
+	monster_obj: Vec<[Point3<f32>; 2]>,
+	bullet_obj: Vec<[Point3<f32>; 2]>,
+	hit_obj: Vec<[Point3<f32>; 2]>,
+	explosion_obj: Vec<[Point3<f32>; 2]>,
+	blade_obj: Vec<[Point3<f32>; 2]>,
 }
 
 impl Map
@@ -1165,6 +1180,15 @@ impl Map
 			seed: seed,
 			time_to_hide_intro: state.time() + 5.,
 			time_to_hide_dash: -1.,
+			player_obj: load_obj("data/player.obj")?,
+			monster_obj: load_obj("data/monster.obj")?,
+			bullet_obj: load_obj("data/bullet.obj")?,
+			hit_obj: load_obj("data/hit.obj")?,
+			explosion_obj: load_obj("data/explosion.obj")?,
+			blade_obj: load_obj("data/blade.obj")?,
+			player_level: 1,
+			player_kills: 0,
+			player_blades: 0,
 		})
 	}
 
@@ -1208,7 +1232,10 @@ impl Map
 			let stats = stats.apply_effects();
 			let pos = Point2::new(position.pos.x, position.pos.z);
 			let disp = Vector2::new(stats.size, stats.size);
-			collidable_grid.insert(id, pos - disp, pos + disp)?;
+			if collidable_grid.insert(id, pos - disp, pos + disp).is_err()
+			{
+				println!("Bad insertion?");
+			}
 		}
 
 		if self.mouse_state[1] || self.mouse_state[2]
@@ -1460,7 +1487,7 @@ impl Map
 		}
 		if state.tick % 20 == 0
 		{
-			println!("Num enemies {}", num_enemies);
+			//~ println!("Num enemies {}", num_enemies);
 		}
 
 		for (start, dest, speed, spell_damage) in new_bullets
@@ -1545,6 +1572,7 @@ impl Map
 				time_to_move.time_to_move = state.time() + stats.cast_delay as f64;
 				target.pos = None;
 				mana.mana -= stats.mana_cost;
+				self.player_blades += 1;
 
 				state.sfx.play_positional_sound(
 					"data/blade_blade.ogg",
@@ -1654,6 +1682,7 @@ impl Map
 						0.8_f32.powi(level_diff)
 					};
 					experience.experience += ((enemy.experience as f32) * f) as i32;
+					self.player_kills += 1;
 					if stats.has_explodey
 					{
 						explosions.push((
@@ -1668,6 +1697,7 @@ impl Map
 			if experience.experience >= level_to_experience(experience.level + 1)
 			{
 				experience.level += 1;
+				self.player_level += 1;
 				life.life = stats.max_life;
 				mana.mana = stats.max_mana;
 				self.state = State::LevelUp;
@@ -1696,7 +1726,10 @@ impl Map
 							}
 							reward_vec.push(reward);
 						}
-						if total_value.abs() > (10. * 1.1_f32.powi(experience.level)) as i32
+						
+						let positive_thresh = (10. * 1.2_f32.powi(experience.level)) as i32;
+						let negative_thresh = -(5. * 1.2_f32.powi(experience.level)) as i32;
+						if total_value > positive_thresh || total_value < negative_thresh
 						{
 							continue 'restart;
 						}
@@ -1773,7 +1806,7 @@ impl Map
 				position,
 				stats,
 				Drawable {
-					kind: DrawKind::Player,
+					kind: DrawKind::AfterImage,
 				},
 				TimeToDie {
 					time_to_die: state.time() + 0.3,
@@ -1833,7 +1866,7 @@ impl Map
 							}
 						}
 					}
-					println!("Killed {}", cell.center);
+					//~ println!("Killed {}", cell.center);
 				}
 				else
 				{
@@ -1863,7 +1896,7 @@ impl Map
 					if !found
 					{
 						new_cell_centers.push(cell_center);
-						println!("New cell {}", cell_center);
+						//~ println!("New cell {}", cell_center);
 					}
 				}
 			}
@@ -2066,7 +2099,7 @@ impl Map
 				{
 					reward.apply(&mut stats);
 				}
-				dbg!(&*stats);
+				//~ dbg!(&*stats);
 				if stats.has_dash && self.time_to_hide_dash < 0.
 				{
 					self.time_to_hide_dash = state.time() + 5.;
@@ -2194,47 +2227,54 @@ impl Map
 			{
 				continue;
 			}
-
-			for i in 0..40
+			
+			let size = match drawable.kind
 			{
-				for j in 0..2
+				DrawKind::Explosion { start_time } =>
 				{
-					let size = match drawable.kind
-					{
-						DrawKind::Explosion { start_time } =>
-						{
-							(0.5 + 0.5 * (state.time() - start_time) as f32) * stats.size
-						}
-						_ => stats.size,
-					};
+					(0.5 + 0.5 * (state.time() - start_time) as f32) * stats.size
+				}
+				_ => stats.size,
+			};
 
-					let theta = 12. * PI * (i + j) as f32 / 40.;
-					let dx = theta / 3.;
-					let dz = size * (1. - i as f32 / 40.) * theta.sin();
-					let dy = size * (1. - i as f32 / 40.) * theta.cos();
-
-					let color = match drawable.kind
-					{
-						DrawKind::Player => Color::from_rgb_f(1., 1., i as f32 / 40.),
-						DrawKind::Enemy(kind) => match kind
-						{
-							EnemyKind::Normal => Color::from_rgb_f(0., 1., 0.),
-							EnemyKind::Magic => Color::from_rgb_f(0.3, 0.3, 1.),
-							EnemyKind::Rare => Color::from_rgb_f(1., 1., 0.),
-						},
-						DrawKind::Bullet(f) => Color::from_rgb_f(0.2, 0.2, 1.)
-							.interpolate(Color::from_rgb_f(1., 1., 1.), f),
-						DrawKind::Hit => Color::from_rgb_f(1., 1., 0.),
-						DrawKind::Explosion { .. } => Color::from_rgb_f(1., 1., 0.),
-					};
-
-					let vtx_pos = Point2::new(dx, dz);
+			let color = match drawable.kind
+			{
+				DrawKind::Player => Color::from_rgb_f(1., 0.5, 1.),
+				DrawKind::AfterImage => Color::from_rgb_f(0.8, 0.8, 0.8),
+				DrawKind::Enemy(kind) => match kind
+				{
+					EnemyKind::Normal => Color::from_rgb_f(0., 1., 0.),
+					EnemyKind::Magic => Color::from_rgb_f(0.3, 0.3, 1.),
+					EnemyKind::Rare => Color::from_rgb_f(1., 1., 0.),
+				},
+				DrawKind::Bullet(f) => Color::from_rgb_f(0.2, 0.2, 1.)
+					.interpolate(Color::from_rgb_f(1., 1., 1.), f),
+				DrawKind::Hit => Color::from_rgb_f(1., 0.1, 0.1),
+				DrawKind::Explosion { .. } => Color::from_rgb_f(1., 0.5, 0.),
+			};
+			
+			let obj = match drawable.kind
+			{
+				DrawKind::Player => &self.player_obj,
+				DrawKind::AfterImage => &self.player_obj,
+				DrawKind::Enemy(_) => &self.monster_obj,
+				DrawKind::Bullet(_) => &self.bullet_obj,
+				DrawKind::Hit => &self.hit_obj,
+				DrawKind::Explosion {..} => &self.explosion_obj,
+			};
+			
+			for line in obj
+			{
+				for vtx in line
+				{
+					let vtx = vtx * size;
+					let vtx_pos = Point2::new(vtx.x, vtx.z);
 					let rot = Rotation2::new(dir);
 					let vtx_pos = rot * vtx_pos;
 
 					vertices.push(Vertex {
 						x: pos.x + vtx_pos.x,
-						y: size + dy,
+						y: vtx.y,
 						z: pos.z + vtx_pos.y,
 						u: 0.,
 						v: 0.,
@@ -2242,6 +2282,14 @@ impl Map
 					})
 				}
 			}
+
+			//~ for i in 0..40
+			//~ {
+				//~ for j in 0..2
+				//~ {
+					
+				//~ }
+			//~ }
 		}
 
 		for (_, (position, blade_blade, stats)) in self
@@ -2265,13 +2313,13 @@ impl Map
 				let theta = theta.rem_euclid(2. * PI);
 
 				let color = Color::from_rgb_f(0.2, 1., 0.2);
-
-				let pts = [(-5., -5.), (0., 5.), (5., -5.)];
-				for i in 0..(pts.len() - 1)
+				
+				for line in &self.blade_obj
 				{
-					for (dx, dz) in &pts[i..i + 2]
+					for vtx in line
 					{
-						let vtx_pos = Point2::new(dx + r, *dz);
+						let vtx = vtx * 15.;
+						let vtx_pos = Point2::new(vtx.x + r, vtx.z);
 						let rot = Rotation2::new(theta);
 						let vtx_pos = rot * vtx_pos;
 
@@ -2556,11 +2604,49 @@ impl Map
 				Color::from_rgba_f(0., 0., 0., 0.5),
 			);
 
+			let mut dy = cy - lh / 2. - lh * 3.;
 			state.core.draw_text(
 				&self.ui_font,
 				Color::from_rgb_f(1., 1., 1.),
 				cx,
-				cy - lh / 2.,
+				dy,
+				FontAlign::Centre,
+				"You died!",
+			);
+			dy += lh * 1.2;
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				cx,
+				dy,
+				FontAlign::Centre,
+				&format!("You reached level {}", self.player_level),
+			);
+			dy += lh * 1.2;
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				cx,
+				dy,
+				FontAlign::Centre,
+				&format!("You killed {} monsters", self.player_kills),
+			);
+			dy += lh * 1.2;
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				cx,
+				dy,
+				FontAlign::Centre,
+				&format!("You summoned {} blades", self.player_blades),
+			);
+			dy += lh * 1.2;
+			dy += lh * 1.2;
+			state.core.draw_text(
+				&self.ui_font,
+				Color::from_rgb_f(1., 1., 1.),
+				cx,
+				dy,
 				FontAlign::Centre,
 				"Your deeds of valor will be remembered (Esc/R)",
 			);

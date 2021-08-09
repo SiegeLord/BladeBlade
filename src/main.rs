@@ -91,7 +91,7 @@ fn real_main() -> Result<()>
 	{
 		if draw && queue.is_empty()
 		{
-			let start = state.core.get_time();
+			//~ let start = state.core.get_time();
 			state.core.set_target_bitmap(Some(display.get_backbuffer()));
 			state.core.clear_to_color(Color::from_rgb_f(0., 0., 0.2));
 			state.core.clear_depth_buffer(1.);
@@ -106,10 +106,10 @@ fn real_main() -> Result<()>
 			}
 
 			state.core.flip_display();
-			let end = state.core.get_time();
+			//~ let end = state.core.get_time();
 			if state.tick % 20 == 0
 			{
-				println!("FPS: {}", 1. / (end - start));
+				//~ println!("FPS: {}", 1. / (end - start));
 			}
 			logics_without_draw = 0;
 		}
@@ -159,12 +159,12 @@ fn real_main() -> Result<()>
 				{
 					if logics_without_draw < 10
 					{
-						let start = state.core.get_time();
+						//~ let start = state.core.get_time();
 						map.logic(&mut state)?;
-						let end = state.core.get_time();
+						//~ let end = state.core.get_time();
 						if state.tick % 20 == 0
 						{
-							println!("LPS: {}", 1. / (end - start));
+							//~ println!("LPS: {}", 1. / (end - start));
 						}
 						logics_without_draw += 1;
 					}

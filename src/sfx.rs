@@ -119,23 +119,27 @@ impl Sfx
 	) -> Result<()>
 	{
 		self.cache_sample(name)?;
-		let sample = self.samples.get(name).unwrap();
+		
+		if self.sample_instances.len() < 50
+		{
+			let sample = self.samples.get(name).unwrap();
 
-		let dist = (sound_pos - camera_pos).norm();
-		let volume = clamp(50000. / (dist * dist), 0., 1.);
-		let pan = clamp((sound_pos.x - camera_pos.x) / 1000., -1., 1.);
+			let dist = (sound_pos - camera_pos).norm();
+			let volume = clamp(50000. / (dist * dist), 0., 1.);
+			let pan = clamp((sound_pos.x - camera_pos.x) / 1000., -1., 1.);
 
-		let instance = self
-			.sink
-			.play_sample(
-				sample,
-				volume,
-				Some(pan),
-				thread_rng().gen_range(0.9..1.1),
-				Playmode::Once,
-			)
-			.map_err(|_| "Couldn't play sound".to_string())?;
-		self.sample_instances.push(instance);
+			let instance = self
+				.sink
+				.play_sample(
+					sample,
+					volume,
+					Some(pan),
+					thread_rng().gen_range(0.9..1.1),
+					Playmode::Once,
+				)
+				.map_err(|_| "Couldn't play sound".to_string())?;
+			self.sample_instances.push(instance);
+		}
 		Ok(())
 	}
 

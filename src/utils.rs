@@ -165,3 +165,35 @@ pub fn load_sample(audio: &AudioAddon, path: &str) -> Result<Sample>
 {
 	Ok(Sample::load(audio, path).map_err(|_| format!("Couldn't load '{}'", path))?)
 }
+
+pub fn load_obj(filename: &str) -> Result<Vec<[Point3<f32>; 2]>>
+{
+	use std::fs::File;
+	use std::io::BufReader;
+	let input =
+		BufReader::new(File::open(filename).map_err(|e| {
+			Error::new(format!("Could not open '{}'", filename), Some(Box::new(e)))
+		})?);
+	let obj = obj::raw::object::parse_obj(input)
+		.map_err(|e| Error::new(format!("Could not open '{}'", filename), Some(Box::new(e))))?;
+
+	let mut lines = vec![];
+
+	for line in obj.lines
+	{
+		match line
+		{
+			obj::raw::object::Line::P(indices) =>
+			{
+				let pos1 = obj.positions[indices[0]];
+				let pos2 = obj.positions[indices[1]];
+				lines.push([
+					Point3::new(pos1.0, pos1.1, pos1.2),
+					Point3::new(pos2.0, pos2.1, pos2.2),
+				])
+			}
+			_ => unreachable!(),
+		}
+	}
+	Ok(lines)
+}

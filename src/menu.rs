@@ -1,10 +1,10 @@
 use crate::error::Result;
 use crate::game_state::{GameState, NextScreen};
-use crate::utils::PI;
+use crate::utils::{load_obj, PI};
 use allegro::*;
 use allegro_font::*;
 use allegro_primitives::*;
-use na::{Point2, Rotation2};
+use na::{Point2, Point3, Rotation2};
 use nalgebra as na;
 
 pub struct Menu
@@ -13,6 +13,7 @@ pub struct Menu
 	display_height: f32,
 
 	ui_font: Font,
+	blade_obj: Vec<[Point3::<f32>; 2]>,
 }
 
 impl Menu
@@ -30,6 +31,7 @@ impl Menu
 				.ttf
 				.load_ttf_font("data/Energon.ttf", 16, Flag::zero())
 				.map_err(|_| "Couldn't load 'data/Energon.ttf'".to_string())?,
+			blade_obj: load_obj("data/blade.obj")?,
 		})
 	}
 
@@ -83,13 +85,13 @@ impl Menu
 
 			let theta = 2. * PI * (state.time() as f32 / speed) + offset;
 			let theta = theta.rem_euclid(2. * PI);
-
-			let pts = [(-5., -5.), (0., 5.), (5., -5.)];
-			for i in 0..(pts.len() - 1)
+			
+			for line in &self.blade_obj
 			{
-				for (dx, dy) in &pts[i..i + 2]
+				for vtx in line
 				{
-					let vtx_pos = Point2::new(dx + r, *dy);
+					let vtx = vtx * 30.;
+					let vtx_pos = Point2::new(vtx.x + r, vtx.z);
 					let rot = Rotation2::new(theta);
 					let vtx_pos = rot * vtx_pos;
 
