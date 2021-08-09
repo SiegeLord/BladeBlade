@@ -1226,6 +1226,8 @@ impl Map
 			128.,
 		);
 
+		let mut to_die = vec![];
+
 		for (id, (position, _, stats)) in
 			self.world.query::<(&Position, &Collision, &Stats)>().iter()
 		{
@@ -1234,7 +1236,9 @@ impl Map
 			let disp = Vector2::new(stats.size, stats.size);
 			if collidable_grid.insert(id, pos - disp, pos + disp).is_err()
 			{
-				println!("Bad insertion?");
+				println!("Bad insertion? {:?}", id);
+				assert!(id != self.player);
+				to_die.push(id);
 			}
 		}
 
@@ -1339,38 +1343,43 @@ impl Map
 			let pos = Point2::new(position.pos.x, position.pos.z);
 			let disp = Vector2::new(stats.size, stats.size);
 
-			let mut res: Vec<_> = collidable_grid
-				.query(pos - disp, pos + disp)?
-				.map(|v| v.clone())
-				.collect();
-			res.sort();
-			res.dedup();
-
-			for other_id in res
+			if let Ok(query) = collidable_grid.query(pos - disp, pos + disp)
 			{
-				if let Some((other_position, other_collision, other_stats)) = self
-					.world
-					.query_one::<(&Position, &Collision, &Stats)>(other_id)?
-					.get()
+				let mut res: Vec<_> = query.map(|v| v.clone())
+					.collect();
+				res.sort();
+				res.dedup();
+
+				for other_id in res
 				{
-					if id == other_id
+					if let Some((other_position, other_collision, other_stats)) = self
+						.world
+						.query_one::<(&Position, &Collision, &Stats)>(other_id)?
+						.get()
 					{
-						continue;
-					}
-					if !collision.kind.collides_with(&other_collision.kind)
-					{
-						continue;
-					}
-					let min_dist = other_stats.size + stats.size;
-					let disp = position.pos - other_position.pos;
-					let dist = disp.norm();
-					if dist < min_dist
-					{
-						velocity.vel +=
-							200. * disp.normalize()
-								* max(2. * ((min_dist - dist) / min_dist).powf(2.), 1.);
+						if id == other_id
+						{
+							continue;
+						}
+						if !collision.kind.collides_with(&other_collision.kind)
+						{
+							continue;
+						}
+						let min_dist = other_stats.size + stats.size;
+						let disp = position.pos - other_position.pos;
+						let dist = disp.norm();
+						if dist < min_dist
+						{
+							velocity.vel +=
+								200. * disp.normalize()
+									* max(2. * ((min_dist - dist) / min_dist).powf(2.), 1.);
+						}
 					}
 				}
+			}
+			else
+			{
+				println!("Bad query? {:?}", id);
 			}
 		}
 
@@ -1518,7 +1527,6 @@ impl Map
 		}
 
 		// Bullet to player collision
-		let mut to_die = vec![];
 		let mut hits = vec![];
 		if let (Ok(player_pos), Ok(mut life), Ok(player_stats)) = (
 			self.world.get::<Position>(self.player),
@@ -1679,7 +1687,7 @@ impl Map
 					}
 					else
 					{
-						0.8_f32.powi(level_diff)
+						0.1_f32.powi(level_diff)
 					};
 					experience.experience += ((enemy.experience as f32) * f) as i32;
 					self.player_kills += 1;
