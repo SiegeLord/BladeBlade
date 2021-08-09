@@ -13,6 +13,19 @@ Kill monsters, get stronger, repeat. You win when you become godlike.
 - Esc - Quit
 - R - Restart
 
+Also, you can edit `options.cfg` for some settings.
+
+# Building instructions
+
+1. Install Allegro 5.
+
+2. Install Rust from rust-lang.org. You'll need the nightly version.
+
+3. Run `cargo run --release` to build and run the game.
+
+On Windows, you can use the pre-built binaries (extracted in the `allegro`
+subdirectory). `run_msys.sh` may be useful for this purpose.
+
 ## Rules Explanations
 
 *Humoristic/Funny. Make the player laugh out loud at least once by funny situations, dialogue, or anything else in your game.*

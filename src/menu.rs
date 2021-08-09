@@ -29,8 +29,8 @@ impl Menu
 			display_height: display_height,
 			ui_font: state
 				.ttf
-				.load_ttf_font("data/Energon.ttf", 16, Flag::zero())
-				.map_err(|_| "Couldn't load 'data/Energon.ttf'".to_string())?,
+				.load_ttf_font("data/AvQest.ttf", 24, Flag::zero())
+				.map_err(|_| "Couldn't load 'data/AvQest.ttf'".to_string())?,
 			blade_obj: load_obj("data/blade.obj")?,
 		})
 	}
