@@ -36,10 +36,10 @@ fn real_main() -> Result<()>
 	let options: Options = load_config("options.cfg")?;
 
 	let mut state = GameState::new()?;
-	//~ if options.play_music
-	//~ {
-	//~ state.sfx.play_music()?;
-	//~ }
+	if options.play_music
+	{
+		state.sfx.play_music()?;
+	}
 
 	if options.fullscreen
 	{

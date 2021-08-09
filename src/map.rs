@@ -371,8 +371,8 @@ impl Cell
 			{
 				for x in -2..=2
 				{
-					let center = x == 0 && y == 0;
-					let kind = if center { boss_kind } else { mob_kind };
+					let is_center = x == 0 && y == 0;
+					let kind = if is_center { boss_kind } else { mob_kind };
 					let spacing = if mob_kind == EnemyKind::Normal
 					{
 						50.
@@ -398,7 +398,16 @@ impl Cell
 					let stats = Stats::enemy_stats(level, kind, &mut rng);
 					let life = stats.apply_effects().max_life;
 
-					if rng.gen_range(0. ..1.) < spawn_prob || center
+					let x = dx + spacing * x as f32;
+					let z = dy + spacing * y as f32;
+
+					if Cell::world_to_cell(&Point3::new(x, 0., z)) != center
+					{
+						//~ println!("Out of bounds enemy!");
+						continue;
+					}
+
+					if rng.gen_range(0. ..1.) < spawn_prob || is_center
 					{
 						if *enemies_left == 0
 						{
@@ -415,11 +424,7 @@ impl Cell
 								level: level,
 							},
 							Position {
-								pos: Point3::new(
-									dx + spacing * x as f32,
-									15.,
-									dy + spacing * y as f32,
-								),
+								pos: Point3::new(x, 15., z),
 								dir: rng.gen_range(0. ..2. * PI),
 							},
 							TimeToMove { time_to_move: 0. },
@@ -719,7 +724,7 @@ impl Stats
 	fn player_stats() -> Self
 	{
 		Self {
-			speed: 200.,
+			speed: 2000.,
 			aggro_range: 100.,
 			close_enough_range: 0.,
 			size: 20.,
@@ -807,7 +812,7 @@ impl Stats
 			cast_delay: 0.5 / f2,
 			skill_duration: 1.,
 			area_of_effect: 100.,
-			spell_damage: 2. * f,
+			spell_damage: 1.5 * f,
 			max_life: max_life,
 			max_mana: 100.,
 			life_regen: 0.,
@@ -1056,6 +1061,9 @@ pub struct Map
 	reward_selection: i32,
 	rewards: Vec<Vec<Reward>>,
 
+	time_to_hide_intro: f64,
+	time_to_hide_dash: f64,
+
 	seed: u64,
 }
 
@@ -1155,6 +1163,8 @@ impl Map
 			reward_selection: 0,
 			rewards: vec![],
 			seed: seed,
+			time_to_hide_intro: state.time() + 5.,
+			time_to_hide_dash: -1.,
 		})
 	}
 
@@ -1182,7 +1192,7 @@ impl Map
 		}
 
 		let cell_pos = Cell::world_to_cell(&self.player_pos);
-		let radius = (2. * CELL_RADIUS as f32 + 1.) * CELL_SIZE as f32 + 320.;
+		let radius = (CELL_RADIUS as f32 + 0.5) * CELL_SIZE as f32 + 320.;
 		let center_x = cell_pos.x as f32 * CELL_SIZE as f32;
 		let center_y = cell_pos.y as f32 * CELL_SIZE as f32;
 
@@ -1456,7 +1466,7 @@ impl Map
 		for (start, dest, speed, spell_damage) in new_bullets
 		{
 			let dir = dest - start;
-			let size = spell_damage.sqrt() * 10.;
+			let size = spell_damage.powf(1. / 3.) * 10.;
 			let stats = Stats::bullet_stats(speed, size);
 			self.world.spawn((
 				Bullet {
@@ -1882,6 +1892,28 @@ impl Map
 			self.world.despawn(id)?;
 		}
 
+		// Recenter things around the player.
+		//~ let mut center = Point3::new(0., 0., 0.);
+		//~ if let Ok(player_pos) = self.world.get::<Position>(self.player)
+		//~ {
+		//~ center.x = player_pos.pos.x;
+		//~ center.z = player_pos.pos.z;
+		//~ }
+
+		//~ for (_, position) in self.world.query::<&mut Position>().iter()
+		//~ {
+		//~ position.pos.x -= center.x;
+		//~ position.pos.z -= center.z;
+		//~ }
+		//~ for (_, target) in self.world.query::<&mut Target>().iter()
+		//~ {
+		//~ target.pos.as_mut().map(|v|{
+
+		//~ v.x -= center.x;
+		//~ v.z -= center.z;
+		//~ });
+		//~ }
+
 		// Camera pos
 		if let Ok(player_pos) = self.world.get::<Position>(self.player)
 		{
@@ -2035,6 +2067,10 @@ impl Map
 					reward.apply(&mut stats);
 				}
 				dbg!(&*stats);
+				if stats.has_dash && self.time_to_hide_dash < 0.
+				{
+					self.time_to_hide_dash = state.time() + 5.;
+				}
 			}
 			self.state = State::Normal;
 			state.paused = false;
@@ -2294,6 +2330,36 @@ impl Map
 		state.core.set_depth_test(None);
 
 		let lh = self.ui_font.get_line_height() as f32;
+		let cx = self.display_width / 2.;
+		let cy = self.display_height / 2.;
+
+		if state.time() < self.time_to_hide_intro
+		{
+			let c = 0.6 + 0.4 * 0.5 * ((5. * state.core.get_time()).sin() + 1.) as f32;
+			let color = Color::from_rgb_f(c, c, c);
+			state.core.draw_text(
+				&self.ui_font,
+				color,
+				cx,
+				cy + 50.,
+				FontAlign::Centre,
+				"Press Space to activate Blade Blade",
+			);
+		}
+
+		if self.time_to_hide_dash > 0. && state.time() < self.time_to_hide_dash
+		{
+			let c = 0.6 + 0.4 * 0.5 * ((5. * state.core.get_time()).sin() + 1.) as f32;
+			let color = Color::from_rgb_f(c, c, c);
+			state.core.draw_text(
+				&self.ui_font,
+				color,
+				cx,
+				cy + 50.,
+				FontAlign::Centre,
+				"Press Right Mouse Button to Dash",
+			);
+		}
 
 		// Life/Mana
 
@@ -2479,9 +2545,6 @@ impl Map
 				}
 			}
 		}
-
-		let cx = self.display_width / 2.;
-		let cy = self.display_height / 2.;
 
 		if self.state == State::Normal && self.world.entity(self.player).is_err()
 		{
