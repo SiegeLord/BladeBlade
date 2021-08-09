@@ -1,9 +1,10 @@
 use crate::error::Result;
 use crate::game_state::{GameState, NextScreen};
+use crate::spatial_grid::SpatialGrid;
 use crate::speech::get_speech;
 use crate::utils::{
 	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
-	random_color, ColorExt, Vec2D, Vec3D, DT, PI,
+	random_color, sigmoid, ColorExt, Vec2D, Vec3D, DT, PI,
 };
 use allegro::*;
 use allegro_font::*;
@@ -16,10 +17,51 @@ use nalgebra as na;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 
-static CELL_SIZE: i32 = 2048;
+static CELL_SIZE: i32 = 1024;
 static CELL_RADIUS: i32 = 2;
 static SUPER_GRID: i32 = 8;
 static VERTEX_RADIUS: f32 = 64.;
+
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub enum EnemyKind
+{
+	Normal,
+	Magic,
+	Rare,
+}
+
+fn make_rare_name(rng: &mut impl Rng) -> String
+{
+	let prefix = [
+		"Snotty",
+		"Corpulent",
+		"Fart",
+		"Puke",
+		"Omega",
+		"Poop-Stained",
+		"Incompetent",
+		"Recently Promoted",
+		"Laxative",
+		"Stained",
+		"Several Wipes",
+		"World-Ending",
+	];
+	let suffix = [
+		"Gas",
+		"Puke",
+		"Fart",
+		"Bubble",
+		"the Flatulent",
+		"of the Crusade",
+		"Who Clogged",
+		"Stain",
+		"Bad Smell",
+	];
+
+	let prefix_idx = rng.gen_range(0..prefix.len());
+	let suffix_idx = rng.gen_range(0..suffix.len());
+	format!("{} {}", prefix[prefix_idx], suffix[suffix_idx])
+}
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(i32)]
@@ -277,7 +319,8 @@ pub struct Cell
 
 impl Cell
 {
-	fn new(center: Point2<i32>, seed: u64, world: &mut hecs::World) -> Self
+	fn new(center: Point2<i32>, seed: u64, enemies_left: &mut i32, world: &mut hecs::World)
+		-> Self
 	{
 		let mut rng = thread_rng();
 		let world_center =
@@ -304,39 +347,100 @@ impl Cell
 				}
 			}
 
-			for y in -1..=1
+			let level = max(1, -center.y);
+			let spawn_prob = sigmoid((level as f32 - 20.) / 10.);
+
+			let mut mob_kind = EnemyKind::Normal;
+			let mut boss_kind = EnemyKind::Normal;
+
+			if rng.gen_range(0. ..1.) < 0.1
 			{
-				for x in -1..=1
+				mob_kind = EnemyKind::Magic;
+				boss_kind = EnemyKind::Magic;
+			}
+			else if rng.gen_range(0. ..1.) < 0.2
+			{
+				boss_kind = EnemyKind::Rare;
+				if rng.gen_range(0. ..1.) < 0.1
 				{
-					world.spawn((
-						Enemy {
-							time_to_deaggro: 0.,
-							fire_delay: 1.,
-							name: "Basic Enemy".into(),
-							experience: 1000,
-						},
-						Position {
-							pos: Point3::new(dx + 50. * x as f32, 15., dy + 50. * y as f32),
-							dir: 0.,
-						},
-						TimeToMove { time_to_move: 0. },
-						Velocity {
-							vel: Vector3::new(0., 0., 0.),
-						},
-						Drawable {
-							kind: DrawKind::Enemy,
-						},
-						Target { pos: None },
-						Collision {
-							kind: CollisionKind::Enemy,
-						},
-						Stats::enemy_stats(),
-						Weapon {
-							time_to_fire: 0.,
-							range: 320.,
-						},
-						Life { life: 100. },
-					));
+					mob_kind = EnemyKind::Magic;
+				}
+			}
+
+			'exit: for y in -2..=2
+			{
+				for x in -2..=2
+				{
+					let center = x == 0 && y == 0;
+					let kind = if center { boss_kind } else { mob_kind };
+					let spacing = if mob_kind == EnemyKind::Normal
+					{
+						50.
+					}
+					else
+					{
+						75.
+					};
+					let exp_bonus = match kind
+					{
+						EnemyKind::Normal => 1.,
+						EnemyKind::Magic => 3.,
+						EnemyKind::Rare => 10.,
+					};
+
+					let name = match kind
+					{
+						EnemyKind::Normal => "Pathetic Monster".to_string(),
+						EnemyKind::Magic => "Monster that Read the Manual".to_string(),
+						EnemyKind::Rare => make_rare_name(&mut rng),
+					};
+
+					let stats = Stats::enemy_stats(level, kind, &mut rng);
+					let life = stats.apply_effects().max_life;
+
+					if rng.gen_range(0. ..1.) < spawn_prob || center
+					{
+						if *enemies_left == 0
+						{
+							break 'exit;
+						}
+						*enemies_left -= 1;
+
+						world.spawn((
+							Enemy {
+								time_to_deaggro: 0.,
+								fire_delay: 1.,
+								name: name,
+								experience: (exp_bonus * 1000. * 1.1_f32.powi(level)) as i32,
+								level: level,
+							},
+							Position {
+								pos: Point3::new(
+									dx + spacing * x as f32,
+									15.,
+									dy + spacing * y as f32,
+								),
+								dir: rng.gen_range(0. ..2. * PI),
+							},
+							TimeToMove { time_to_move: 0. },
+							Velocity {
+								vel: Vector3::new(0., 0., 0.),
+							},
+							Drawable {
+								kind: DrawKind::Enemy(kind),
+							},
+							Target { pos: None },
+							Collision {
+								kind: CollisionKind::Enemy,
+							},
+							stats,
+							Weapon {
+								time_to_fire: 0.,
+								range: 320.,
+							},
+							Life { life: life },
+						));
+					}
 				}
 			}
 		}
@@ -481,8 +585,8 @@ pub struct Collision
 pub enum DrawKind
 {
 	Player,
-	Enemy,
-	Bullet,
+	Enemy(EnemyKind),
+	Bullet(f32),
 	Hit,
 	Explosion
 	{
@@ -500,6 +604,23 @@ pub struct Drawable
 pub enum EffectKind
 {
 	Dash,
+	ProjMulti,
+	ExtraFast,
+	ExtraStrong,
+}
+
+impl EffectKind
+{
+	fn description(&self) -> &str
+	{
+		match *self
+		{
+			EffectKind::Dash => "Dashes",
+			EffectKind::ProjMulti => "Multiple Projectiles",
+			EffectKind::ExtraFast => "Extra Fast",
+			EffectKind::ExtraStrong => "Extra Strong",
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -518,6 +639,18 @@ impl Effect
 			EffectKind::Dash =>
 			{
 				stats.speed *= 10.;
+			}
+			EffectKind::ProjMulti =>
+			{
+				stats.proj_multi *= 3;
+			}
+			EffectKind::ExtraFast =>
+			{
+				stats.speed *= 2.;
+			}
+			EffectKind::ExtraStrong =>
+			{
+				stats.spell_damage *= 4.;
 			}
 		}
 	}
@@ -553,6 +686,8 @@ pub struct Stats
 	pub mana_cost: f32,
 	pub has_dash: bool,
 	pub has_explodey: bool,
+	pub proj_multi: i32,
+	pub proj_speed: f32,
 
 	pub effects: Vec<Effect>,
 }
@@ -597,43 +732,103 @@ impl Stats
 			life_regen: 1.,
 			mana_regen: 5.,
 			mana_cost: 10.,
-			has_dash: false,
-			has_explodey: false,
+			has_dash: true,
+			has_explodey: true,
+			proj_multi: 1,
+			proj_speed: 1.,
 
 			effects: vec![],
 		}
 	}
 
-	fn enemy_stats() -> Self
+	fn enemy_stats(level: i32, kind: EnemyKind, rng: &mut impl Rng) -> Self
 	{
+		let mut f = 1.1_f32.powi(level - 1);
+		let mut f2 = 1.01_f32.powi(level - 1);
+		let mut size = min(30., 20. * f2);
+		let mut max_life = 100. * f;
+		let mut effects = vec![];
+
+		match kind
+		{
+			EnemyKind::Normal =>
+			{}
+			EnemyKind::Magic =>
+			{
+				f *= 1.5;
+				f2 *= 1.2;
+				size *= 1.5;
+				max_life *= 3.;
+
+				if rng.gen_range(0. ..1.) < 0.2
+				{
+					effects.push(Effect {
+						effect_over_time: -1.,
+						kind: EffectKind::ProjMulti,
+					});
+				}
+			}
+			EnemyKind::Rare =>
+			{
+				f *= 2.;
+				f2 *= 1.2;
+				size *= 2.;
+				max_life *= 10.;
+
+				if rng.gen_range(0. ..1.) < 0.2
+				{
+					effects.push(Effect {
+						effect_over_time: -1.,
+						kind: EffectKind::ProjMulti,
+					});
+				}
+				if rng.gen_range(0. ..1.) < 0.2
+				{
+					effects.push(Effect {
+						effect_over_time: -1.,
+						kind: EffectKind::ExtraFast,
+					});
+				}
+				if rng.gen_range(0. ..1.) < 0.2
+				{
+					effects.push(Effect {
+						effect_over_time: -1.,
+						kind: EffectKind::ExtraStrong,
+					});
+				}
+			}
+		}
+
 		Self {
-			speed: 100.,
+			speed: 100. * f2,
 			aggro_range: 400.,
-			close_enough_range: 300.,
-			size: 20.,
-			cast_delay: 0.5,
+			close_enough_range: 300. / f2,
+			size: size,
+			cast_delay: 0.5 / f2,
 			skill_duration: 1.,
 			area_of_effect: 100.,
-			spell_damage: 1.,
-			max_life: 100.,
+			spell_damage: 2. * f,
+			max_life: max_life,
 			max_mana: 100.,
 			life_regen: 0.,
 			mana_regen: 10.,
 			mana_cost: 10.,
 			has_dash: false,
 			has_explodey: false,
+			proj_multi: 1,
+			proj_speed: 200. * f2,
 
-			effects: vec![],
+			effects: effects,
 		}
 	}
 
-	fn bullet_stats() -> Self
+	fn bullet_stats(speed: f32, size: f32) -> Self
 	{
 		Self {
-			speed: 200.,
+			speed: speed,
 			aggro_range: 0.,
 			close_enough_range: 0.,
-			size: 10.,
+			size: size,
 			cast_delay: 0.,
 			skill_duration: 0.,
 			area_of_effect: 100.,
@@ -645,6 +840,33 @@ impl Stats
 			mana_cost: 10.,
 			has_dash: false,
 			has_explodey: false,
+			proj_multi: 1,
+			proj_speed: 1.,
+
+			effects: vec![],
+		}
+	}
+
+	fn explosion_stats(aoe: f32) -> Self
+	{
+		Self {
+			speed: 200.,
+			aggro_range: 0.,
+			close_enough_range: 0.,
+			size: aoe,
+			cast_delay: 0.,
+			skill_duration: 0.,
+			area_of_effect: 100.,
+			spell_damage: 1.,
+			max_life: 100.,
+			max_mana: 100.,
+			life_regen: 10.,
+			mana_regen: 10.,
+			mana_cost: 10.,
+			has_dash: false,
+			has_explodey: false,
+			proj_multi: 1,
+			proj_speed: 1.,
 
 			effects: vec![],
 		}
@@ -668,6 +890,8 @@ impl Stats
 			mana_cost: 10.,
 			has_dash: false,
 			has_explodey: false,
+			proj_multi: 1,
+			proj_speed: 1.,
 
 			effects: vec![],
 		}
@@ -681,6 +905,7 @@ pub struct Enemy
 	pub fire_delay: f32,
 	pub name: String,
 	pub experience: i32,
+	pub level: i32,
 }
 
 #[derive(Clone)]
@@ -879,11 +1104,17 @@ impl Map
 		));
 
 		let mut cells = vec![];
+		let mut enemies_left = 1000;
 		for y in -CELL_RADIUS..=CELL_RADIUS
 		{
 			for x in -CELL_RADIUS..=CELL_RADIUS
 			{
-				cells.push(Cell::new(Point2::new(x, y), seed, &mut world));
+				cells.push(Cell::new(
+					Point2::new(x, y),
+					seed,
+					&mut enemies_left,
+					&mut world,
+				));
 			}
 		}
 
@@ -948,6 +1179,26 @@ impl Map
 		if self.state != State::Normal
 		{
 			return Ok(());
+		}
+
+		let cell_pos = Cell::world_to_cell(&self.player_pos);
+		let radius = (2. * CELL_RADIUS as f32 + 1.) * CELL_SIZE as f32 + 320.;
+		let center_x = cell_pos.x as f32 * CELL_SIZE as f32;
+		let center_y = cell_pos.y as f32 * CELL_SIZE as f32;
+
+		let mut collidable_grid = SpatialGrid::new(
+			Point2::new(center_x - radius, center_y - radius),
+			Point2::new(center_x + radius, center_y + radius),
+			128.,
+		);
+
+		for (id, (position, _, stats)) in
+			self.world.query::<(&Position, &Collision, &Stats)>().iter()
+		{
+			let stats = stats.apply_effects();
+			let pos = Point2::new(position.pos.x, position.pos.z);
+			let disp = Vector2::new(stats.size, stats.size);
+			collidable_grid.insert(id, pos - disp, pos + disp)?;
 		}
 
 		if self.mouse_state[1] || self.mouse_state[2]
@@ -1048,25 +1299,40 @@ impl Map
 			.query::<(&Position, &mut Velocity, &Collision, &Stats)>()
 			.iter()
 		{
-			for (other_id, (other_position, other_collision, other_stats)) in
-				self.world.query::<(&Position, &Collision, &Stats)>().iter()
+			let pos = Point2::new(position.pos.x, position.pos.z);
+			let disp = Vector2::new(stats.size, stats.size);
+
+			let mut res: Vec<_> = collidable_grid
+				.query(pos - disp, pos + disp)?
+				.map(|v| v.clone())
+				.collect();
+			res.sort();
+			res.dedup();
+
+			for other_id in res
 			{
-				if id == other_id
+				if let Some((other_position, other_collision, other_stats)) = self
+					.world
+					.query_one::<(&Position, &Collision, &Stats)>(other_id)?
+					.get()
 				{
-					continue;
-				}
-				if !collision.kind.collides_with(&other_collision.kind)
-				{
-					continue;
-				}
-				let min_dist = other_stats.size + stats.size;
-				let disp = position.pos - other_position.pos;
-				let dist = disp.norm();
-				if dist < min_dist
-				{
-					velocity.vel +=
-						200. * disp.normalize()
-							* max(2. * ((min_dist - dist) / min_dist).powf(2.), 1.);
+					if id == other_id
+					{
+						continue;
+					}
+					if !collision.kind.collides_with(&other_collision.kind)
+					{
+						continue;
+					}
+					let min_dist = other_stats.size + stats.size;
+					let disp = position.pos - other_position.pos;
+					let dist = disp.norm();
+					if dist < min_dist
+					{
+						velocity.vel +=
+							200. * disp.normalize()
+								* max(2. * ((min_dist - dist) / min_dist).powf(2.), 1.);
+					}
 				}
 			}
 		}
@@ -1133,6 +1399,7 @@ impl Map
 		}
 
 		// Fire weapon
+		let mut num_enemies = 0;
 		let mut new_bullets = vec![];
 		for (_id, (enemy, position, target, weapon, time_to_move, stats)) in self
 			.world
@@ -1146,6 +1413,9 @@ impl Map
 			)>()
 			.iter()
 		{
+			let stats = stats.apply_effects();
+
+			num_enemies += 1;
 			if let Some(pos) = target.pos
 			{
 				//~ println!("Fire {:?}", id);
@@ -1155,7 +1425,20 @@ impl Map
 						state.time() + enemy.fire_delay as f64 + stats.cast_delay as f64;
 					time_to_move.time_to_move = state.time() + stats.cast_delay as f64;
 
-					new_bullets.push((position.pos, pos, stats.spell_damage));
+					let dtheta = PI / 12.;
+					for i in 0..stats.proj_multi
+					{
+						let disp = (pos - position.pos).xz();
+						let rot = Rotation2::new((i - stats.proj_multi / 2) as f32 * dtheta);
+						let disp = rot * disp;
+						let target = Vector3::new(disp.x, pos.y, disp.y);
+						new_bullets.push((
+							position.pos,
+							position.pos + target,
+							stats.proj_speed,
+							stats.spell_damage,
+						));
+					}
 
 					state.sfx.play_positional_sound(
 						"data/weapon.ogg",
@@ -1165,11 +1448,16 @@ impl Map
 				}
 			}
 		}
+		if state.tick % 20 == 0
+		{
+			println!("Num enemies {}", num_enemies);
+		}
 
-		for (start, dest, spell_damage) in new_bullets
+		for (start, dest, speed, spell_damage) in new_bullets
 		{
 			let dir = dest - start;
-			let stats = Stats::bullet_stats();
+			let size = spell_damage.sqrt() * 10.;
+			let stats = Stats::bullet_stats(speed, size);
 			self.world.spawn((
 				Bullet {
 					damage: spell_damage,
@@ -1182,7 +1470,7 @@ impl Map
 					vel: dir.normalize() * stats.speed,
 				},
 				Drawable {
-					kind: DrawKind::Bullet,
+					kind: DrawKind::Bullet(sigmoid((spell_damage - 10.) / 10.)),
 				},
 				stats,
 				TimeToDie {
@@ -1346,7 +1634,16 @@ impl Map
 			{
 				if enemy_life.life < 0.
 				{
-					experience.experience += enemy.experience;
+					let level_diff = (experience.level - enemy.level).abs();
+					let f = if level_diff < 5
+					{
+						1.
+					}
+					else
+					{
+						0.8_f32.powi(level_diff)
+					};
+					experience.experience += ((enemy.experience as f32) * f) as i32;
 					if stats.has_explodey
 					{
 						explosions.push((
@@ -1407,7 +1704,7 @@ impl Map
 		{
 			self.world.spawn((
 				Position { pos: pos, dir: 0. },
-				Stats::bullet_stats(),
+				Stats::explosion_stats(aoe),
 				Drawable {
 					kind: DrawKind::Explosion {
 						start_time: state.time(),
@@ -1440,7 +1737,9 @@ impl Map
 		// Effect expiration
 		for (_, stats) in self.world.query::<&mut Stats>().iter()
 		{
-			stats.effects.retain(|e| state.time() < e.effect_over_time);
+			stats
+				.effects
+				.retain(|e| e.effect_over_time < 0. || (state.time() < e.effect_over_time));
 		}
 
 		// Dash after-images
@@ -1518,6 +1817,10 @@ impl Map
 						if cell.contains(&position.pos)
 						{
 							to_die.push(id);
+							if self.world.get::<&Enemy>(id).is_ok()
+							{
+								num_enemies -= 1;
+							}
 						}
 					}
 					println!("Killed {}", cell.center);
@@ -1555,11 +1858,23 @@ impl Map
 				}
 			}
 		}
+
+		let mut enemies_left = 1000 - num_enemies;
+
+		new_cell_centers.shuffle(&mut rng);
+
 		for cell_center in new_cell_centers
 		{
-			self.cells
-				.push(Cell::new(cell_center, self.seed, &mut self.world));
+			self.cells.push(Cell::new(
+				cell_center,
+				self.seed,
+				&mut enemies_left,
+				&mut self.world,
+			));
 		}
+
+		to_die.sort();
+		to_die.dedup();
 
 		// Remove dead entities
 		for id in to_die
@@ -1852,7 +2167,7 @@ impl Map
 					{
 						DrawKind::Explosion { start_time } =>
 						{
-							(1. + (state.time() - start_time) as f32) * stats.size
+							(0.5 + 0.5 * (state.time() - start_time) as f32) * stats.size
 						}
 						_ => stats.size,
 					};
@@ -1865,8 +2180,14 @@ impl Map
 					let color = match drawable.kind
 					{
 						DrawKind::Player => Color::from_rgb_f(1., 1., i as f32 / 40.),
-						DrawKind::Enemy => Color::from_rgb_f(1., 0., i as f32 / 40.),
-						DrawKind::Bullet => Color::from_rgb_f(0.2, 0.2, 1.),
+						DrawKind::Enemy(kind) => match kind
+						{
+							EnemyKind::Normal => Color::from_rgb_f(0., 1., 0.),
+							EnemyKind::Magic => Color::from_rgb_f(0.3, 0.3, 1.),
+							EnemyKind::Rare => Color::from_rgb_f(1., 1., 0.),
+						},
+						DrawKind::Bullet(f) => Color::from_rgb_f(0.2, 0.2, 1.)
+							.interpolate(Color::from_rgb_f(1., 1., 1.), f),
 						DrawKind::Hit => Color::from_rgb_f(1., 1., 0.),
 						DrawKind::Explosion { .. } => Color::from_rgb_f(1., 1., 0.),
 					};
@@ -2125,14 +2446,37 @@ impl Map
 					Color::from_rgb_f(0.7, 0.1, 0.1),
 				);
 
+				let dy = dy - lh / 2. + h / 2.;
+
 				state.core.draw_text(
 					&self.ui_font,
 					Color::from_rgb_f(1., 1., 1.),
 					self.display_width / 2.,
-					dy - self.ui_font.get_line_height() as f32 / 2. + h / 2.,
+					dy,
 					FontAlign::Centre,
 					&enemy.name,
 				);
+
+				state.core.draw_text(
+					&self.ui_font,
+					Color::from_rgb_f(1., 1., 1.),
+					self.display_width / 2.,
+					dy + lh * 1.2,
+					FontAlign::Centre,
+					&format!("Level: {}", enemy.level),
+				);
+
+				for (i, effect) in stats.effects.iter().enumerate()
+				{
+					state.core.draw_text(
+						&self.ui_font,
+						Color::from_rgb_f(1., 1., 1.),
+						self.display_width / 2.,
+						dy + lh * 1.2 + lh * 1.2 * (i + 1) as f32,
+						FontAlign::Centre,
+						effect.kind.description(),
+					);
+				}
 			}
 		}
 
@@ -2168,7 +2512,7 @@ impl Map
 				0.,
 				self.display_width,
 				self.display_height,
-				Color::from_rgba_f(0., 0., 0., 0.5),
+				Color::from_rgba_f(0., 0., 0., 0.7),
 			);
 
 			let bmp = state.get_bitmap("data/face.png").unwrap();

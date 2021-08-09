@@ -8,13 +8,14 @@ mod game_state;
 mod map;
 mod menu;
 mod sfx;
+mod spatial_grid;
 mod speech;
 mod sprite;
 mod utils;
 
 use crate::error::Result;
 use crate::game_state::{GameState, NextScreen};
-use crate::utils::{load_config, world_to_screen, DT};
+use crate::utils::{load_config, DT};
 use allegro::*;
 use allegro_dialog::*;
 use rand::prelude::*;
@@ -83,6 +84,7 @@ fn real_main() -> Result<()>
 		display.get_height() as f32,
 	)?;
 	let mut map: Option<map::Map> = None;
+	let mut logics_without_draw = 0;
 
 	timer.start();
 	while !quit
@@ -105,10 +107,11 @@ fn real_main() -> Result<()>
 
 			state.core.flip_display();
 			let end = state.core.get_time();
-			if state.tick % 200 == 0
+			if state.tick % 20 == 0
 			{
-				println!("{}", 1. / (end - start));
+				println!("FPS: {}", 1. / (end - start));
 			}
+			logics_without_draw = 0;
 		}
 
 		let event = queue.wait_for_event();
@@ -154,7 +157,17 @@ fn real_main() -> Result<()>
 				//~ println!("{}", 1. / (end - start));
 				if let Some(map) = &mut map
 				{
-					map.logic(&mut state)?;
+					if logics_without_draw < 10
+					{
+						let start = state.core.get_time();
+						map.logic(&mut state)?;
+						let end = state.core.get_time();
+						if state.tick % 20 == 0
+						{
+							println!("LPS: {}", 1. / (end - start));
+						}
+						logics_without_draw += 1;
+					}
 				}
 				else
 				{

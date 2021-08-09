@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::sfx::Sfx;
 use crate::sprite::Sprite;
-use crate::utils::{load_bitmap, MapPos, Vec2D, DT};
+use crate::utils::{load_bitmap, Vec2D, DT};
 use allegro::*;
 use allegro_font::*;
 use allegro_image::*;
