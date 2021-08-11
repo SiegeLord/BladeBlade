@@ -93,8 +93,8 @@ impl RewardKind
 	{
 		match *self
 		{
-			RewardKind::ExplodeOnDeath => 100,
-			RewardKind::Dash => 50,
+			RewardKind::ExplodeOnDeath => 80,
+			RewardKind::Dash => 40,
 			_ =>
 			{
 				let max_value = 5. * 1.1_f32.powf(tier as f32);
@@ -352,7 +352,7 @@ impl Cell
 			}
 
 			let level = max(1, -center.y);
-			let spawn_prob = sigmoid((level as f32 - 20.) / 5.);
+			let spawn_prob = min(0.95, level as f32 / 60.);
 
 			let mut mob_kind = EnemyKind::Normal;
 			let mut boss_kind = EnemyKind::Normal;
@@ -424,7 +424,7 @@ impl Cell
 								time_to_deaggro: 0.,
 								fire_delay: 1.,
 								name: name,
-								experience: (exp_bonus * 1000. * 1.3_f32.powi(level)) as i32,
+								experience: (exp_bonus * 2000. * ((level + 1) as f32).powf(0.9)) as i32,
 								level: level,
 							},
 							Position {
@@ -768,7 +768,7 @@ impl Stats
 				f *= 1.5;
 				f2 *= 1.2;
 				size *= 1.5;
-				max_life *= 3.;
+				max_life *= 2.;
 
 				if rng.gen_range(0. ..1.) < 0.2
 				{
@@ -783,7 +783,7 @@ impl Stats
 				f *= 2.;
 				f2 *= 1.2;
 				size *= 2.;
-				max_life *= 10.;
+				max_life *= 4.;
 
 				if rng.gen_range(0. ..1.) < 0.2
 				{
@@ -1170,7 +1170,7 @@ impl Map
 				//~ .load_ttf_font("data/Energon.ttf", 16, Flag::zero())
 				//~ .load_ttf_font("data/DejaVuSans.ttf", 20, Flag::zero())
 				.load_ttf_font("data/AvQest.ttf", 24, Flag::zero())
-				.map_err(|_| "Couldn't load 'data/Energon.ttf'".to_string())?,
+				.map_err(|_| "Couldn't load 'data/AvQest.ttf'".to_string())?,
 			state: State::Normal,
 			old_state: State::Normal,
 			old_paused: false,
@@ -1687,7 +1687,7 @@ impl Map
 					}
 					else
 					{
-						0.1_f32.powi(level_diff)
+						0.3_f32.powi(level_diff - 4)
 					};
 					experience.experience += ((enemy.experience as f32) * f) as i32;
 					self.player_kills += 1;
