@@ -7,23 +7,23 @@ license = "GPL-3.0-only"
 
 [dependencies]
 
-allegro = { version="0.0.41" }
-allegro_dialog = { version="0.0.41" }
-allegro_image = { version="0.0.41" }
-allegro_font = { version="0.0.41" }
-allegro_ttf = { version="0.0.41" }
-allegro_acodec = { version="0.0.41" }
-allegro_audio = { version="0.0.41" }
-allegro_primitives = { version="0.0.41" }
-allegro_color = { version="0.0.41" }
+allegro = { version="0.0.43" }
+allegro_dialog = { version="0.0.43" }
+allegro_image = { version="0.0.43" }
+allegro_font = { version="0.0.43" }
+allegro_ttf = { version="0.0.43" }
+allegro_acodec = { version="0.0.43" }
+allegro_audio = { version="0.0.43" }
+allegro_primitives = { version="0.0.43" }
+allegro_color = { version="0.0.43" }
 
-hecs = "0.6.0"
-slr_config = "0.0.20"
-nalgebra = "0.28.0"
-rand = "0.8.4"
-serde = "1.0.127"
-serde_derive = "1.0.127"
-obj-rs = "0.6.3"
+hecs = "0.9.0"
+slr_config = "0.0.21"
+nalgebra = "0.31.1"
+rand = "0.8.5"
+serde = "1.0.142"
+serde_derive = "1.0.142"
+obj-rs = "0.7.0"
 
 [profile.release]
 debug = true

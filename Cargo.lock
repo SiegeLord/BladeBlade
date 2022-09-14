@@ -37,9 +37,9 @@ dependencies = [
 
 [[package]]
 name = "allegro"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d6890b91f6b0714e65f310ca5243eb6eb308953e7691c9a1b6f1f6ce61d791c"
+checksum = "087b801a25679003bad3938ec9a9d2c26ba4a2d1c0e15a7ba83854f30b37b269"
 dependencies = [
  "allegro-sys",
  "allegro_util",
@@ -49,9 +49,9 @@ dependencies = [
 
 [[package]]
 name = "allegro-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f897bccb7d3241e763cae019d1b40a4fbc06724f28c0ac18d2a2d77d6ec008c"
+checksum = "4134d22bdb490694658cc3fb18610624e7e29e25abfee214d2a58fee3d86e41a"
 dependencies = [
  "allegro_util",
  "libc",
@@ -59,9 +59,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_acodec"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90bd715c26603ef11f91c08de8e3d19db0b84bdd1468cd45a845a77920e349bb"
+checksum = "b58bc69a95002c7ebea7ba36da86cc3014d804c13820a9e8e54b1f9e21d551c6"
 dependencies = [
  "allegro",
  "allegro_acodec-sys",
@@ -70,9 +70,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_acodec-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b5d338c0e74046cdc33ec3fea52f9835f516962417098e161b07aa3b2565764"
+checksum = "7f7a4c80595b7b77992ab5f26aa8f79282e9964a724818055949d459d7638476"
 dependencies = [
  "allegro_util",
  "libc",
@@ -80,9 +80,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_audio"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac195b897ab34622c0bd01b27327a7a41a408465bb95a26dcccfed59e55c1c74"
+checksum = "2f0610419a2588f0477026d15f26c8ae4d2b4a196a9f381040133c65e24c4b43"
 dependencies = [
  "allegro",
  "allegro_audio-sys",
@@ -92,9 +92,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_audio-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d18a2e568428815e334ea5bbb9aa155a12eaac0c0731d89f21c780ceb035ba"
+checksum = "4f9e4b57f69bf6f76ba1a414ed88fd64f8f37e3cbe1f8abeaeb2c22c45081c18"
 dependencies = [
  "allegro-sys",
  "allegro_util",
@@ -103,9 +103,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_color"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec4be199f175b7f0f5f5547ccc9328a9f110a941c46b5d35b9c799aa37755774"
+checksum = "6e9cc2d1454937c17ca79e592c9148e4f08e3f2023aeb144eaed0d559d6795db"
 dependencies = [
  "allegro",
  "allegro_color-sys",
@@ -115,9 +115,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_color-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "541071a1fd82651256a86a8764d71bedd01716f1d21c82236492e9088d16396d"
+checksum = "1d6cef8b71c240a6f5b6daf479ef5fb05ee21ce84a953bccd1a869399eeb97d7"
 dependencies = [
  "allegro-sys",
  "allegro_util",
@@ -126,9 +126,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_dialog"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79d35655907529c086e2e49087660c9294f0acc95df3ef78287e7595def256a4"
+checksum = "3c2042c3205af6ddbf26abe6cf2a6278f1b4b840c6ba27a666c9d1c4fe59cae8"
 dependencies = [
  "allegro",
  "allegro_dialog-sys",
@@ -138,9 +138,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_dialog-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efcb5a8c3cc5a68b74c2a6edb4fd9df02d482b399d25600465d38e7968d1356d"
+checksum = "de2106710493a33ae8dd72044bebadc78a7ea65323bdf8828bf9da17548b65c6"
 dependencies = [
  "allegro-sys",
  "allegro_util",
@@ -149,9 +149,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_font"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d8d1b41831796ed55626791c98e0884cf12244543bb6eaf78ae9dcf60e744b"
+checksum = "18cdb26ef832621c228a66b742041f1a35e0026cb1992b817c2583d92df6ef62"
 dependencies = [
  "allegro",
  "allegro-sys",
@@ -162,9 +162,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_font-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "057c94fb03b5d6f24442a1ac65183df46c22ac89e48b8593735e966245c34310"
+checksum = "801e98df5912685ba4091a4bca861ea7097a41d2899e91dc1c44c1ffc08d254b"
 dependencies = [
  "allegro-sys",
  "allegro_util",
@@ -173,9 +173,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_image"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3382f9f00421e3c886e35eaecf3ce8ef4cae192f2c8e078ef0778030a14cbf2"
+checksum = "ac8f9edef795140b4eaf3ce102db551d29f536846ec968e5c7c70008a607e935"
 dependencies = [
  "allegro",
  "allegro_image-sys",
@@ -185,9 +185,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_image-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f158048743a95641e892a583888a8d5bf2bff4dd692ba1a18db716f0cd0a62db"
+checksum = "b0ead1cb198812421fe8f881fd5b227cb04a51db19fd6c2710e10e1ad37168ea"
 dependencies = [
  "allegro_util",
  "libc",
@@ -195,9 +195,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_primitives"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61ac20ee84e85048433eb2d792947f9ba30bb172bae4b6e5acce01ff0de503c6"
+checksum = "d897f4767943a14464fdf0b51ac62ae8a455390ea835be44068e5bffc5bfd8ca"
 dependencies = [
  "allegro",
  "allegro-sys",
@@ -207,9 +207,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_primitives-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdcae4d697f8ae1b0e91264fa1d93d2d707a776fab367bd0257b9d37b21ea6e6"
+checksum = "d75c5fe48d535485ba9fa71eb131cf98c72ad16f2b7a0b7d6e27c88b9bd2ecc3"
 dependencies = [
  "allegro-sys",
  "allegro_util",
@@ -218,9 +218,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_ttf"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b176557d823696dfce796fa9bd953d9d218b7a55a6b3638ca5312f1fab53b474"
+checksum = "8293cd6a6733c2d116e87bcb11ed2a8eabfba3557887cdb06e92185f571cbdaa"
 dependencies = [
  "allegro",
  "allegro_font",
@@ -231,9 +231,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_ttf-sys"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "478004bd254946b0b2c980fbe641ad1d6534955c6d52b5ce262e19cc8d88912b"
+checksum = "7c3d91026699f1c23293451d143e978937280f51c12488bc31e98da9d7cfc999"
 dependencies = [
  "allegro-sys",
  "allegro_font-sys",
@@ -243,9 +243,9 @@ dependencies = [
 
 [[package]]
 name = "allegro_util"
-version = "0.0.41"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55bac672303c25c69d0d669b8994c5580fa2b896e167c009f3e278d1d8cf391b"
+checksum = "bfb00c8bf39072c58915edbc59276392c05920b6fc5ffcc13984cd7328a1fad0"
 dependencies = [
  "libc",
 ]
@@ -266,6 +266,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
+name = "bytemuck"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f5715e491b5a1598fc2bef5a606847b5dc1d48ea625bd3c02c00de8285591da"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -284,19 +290,30 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.11.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
+checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
  "ahash",
 ]
 
 [[package]]
 name = "hecs"
-version = "0.6.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c73af232175172161145addeb63d4271fa082c0362ad34139d211bf68b228ad5"
+checksum = "11b81e962a0576ee276c1e6cbdce16bed83c7357ce8ff4e9efc8f49e43d2d1a1"
 dependencies = [
+ "hashbrown",
+ "spin",
+]
+
+[[package]]
+name = "indexmap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a35a97730320ffe8e2d410b5d3b69279b98d2c14bdb8b70ea89ecf7888d41e"
+dependencies = [
+ "autocfg",
  "hashbrown",
 ]
 
@@ -323,9 +340,9 @@ dependencies = [
 
 [[package]]
 name = "nalgebra"
-version = "0.28.0"
+version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39fe9195887b501f296ac918ecbff4650b6935da164d4902ef73e140c46a0dce"
+checksum = "e9e0a04ce089f9401aac565c740ed30c46291260f27d4911fdbaa6ca65fa3044"
 dependencies = [
  "approx",
  "matrixmultiply",
@@ -389,13 +406,12 @@ dependencies = [
 
 [[package]]
 name = "obj-rs"
-version = "0.6.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21fb5f56c5833319f6cb0714a9548853ee4ef745a2c4136da82343c7bd1ae14c"
+checksum = "c90a2f645433dba5c609451d3fa847282b0f23ee8d8fa75491a946af53cb1db4"
 dependencies = [
  "num-traits",
  "serde",
- "vec_map",
 ]
 
 [[package]]
@@ -418,11 +434,11 @@ checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.28"
+version = "1.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c7ed8b8c7b886ea3ed7dde405212185f423ab44682667c8c6dd14aa1d9f6612"
+checksum = "0a2ca2c61bc9f3d74d2886294ab7b9853abd9c1ad903a3ac7815c58989bb7bab"
 dependencies = [
- "unicode-xid",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -436,14 +452,13 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e7573632e6454cf6b99d7aac4ccca54be06da05aca2ef7423d22d27d4d4bcd8"
+checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
  "rand_chacha",
  "rand_core",
- "rand_hc",
 ]
 
 [[package]]
@@ -466,34 +481,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_hc"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d51e9f596de227fda2ea6c84607f5558e196eeaf43c986b724ba4fb8fdf497e7"
-dependencies = [
- "rand_core",
-]
-
-[[package]]
 name = "rawpointer"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3"
 
 [[package]]
-name = "serde"
-version = "1.0.127"
+name = "safe_arch"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f03b9878abf6d14e6779d3f24f07b2cfa90352cfec4acc5aab8f1ac7f146fae8"
+checksum = "794821e4ccb0d9f979512f9c1973480123f9bd62a90d74ab0f9426fcf8f4a529"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.144"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f747710de3dcd43b88c9168773254e809d8ddbdf9653b84e2554ab219f17860"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.127"
+version = "1.0.144"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a024926d3432516606328597e0f224a51355a493b49fdd67e9209187cbe55ecc"
+checksum = "94ed3a816fb1d101812f83e789f888322c34e291f894f19590dc310963e87a00"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -502,22 +517,24 @@ dependencies = [
 
 [[package]]
 name = "simba"
-version = "0.5.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e82063457853d00243beda9952e910b82593e4b07ae9f721b9278a99a0d3d5c"
+checksum = "c48e45e5961033db030b56ad67aef22e9c908c493a6e8348c0a0f6b93433cd77"
 dependencies = [
  "approx",
  "num-complex",
  "num-traits",
  "paste",
+ "wide",
 ]
 
 [[package]]
 name = "slr_config"
-version = "0.0.20"
+version = "0.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d8e27cd833f6f94cbda60404c2c46c514eafb3824e17df89327327391d64196"
+checksum = "cffb1fc259a3fb4edd54256603630fa53404a2033d762326fea61fd32a29f829"
 dependencies = [
+ "indexmap",
  "serde",
  "serde_derive",
  "slr_parser",
@@ -525,22 +542,28 @@ dependencies = [
 
 [[package]]
 name = "slr_parser"
-version = "0.0.20"
+version = "0.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5d8cac03fce36f776c0167701a5cccc08396c3d680a6b3b53ed72a7c063b453"
+checksum = "5bbcc8c60ca5f743a8ed5043b3d99c61b4387cbc2eeefd3307df31df642f63b2"
 dependencies = [
  "serde",
 ]
 
 [[package]]
-name = "syn"
-version = "1.0.74"
+name = "spin"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1873d832550d4588c3dbc20f01361ab00bfe741048f71e3fecf145a7cc18b29c"
+checksum = "7f6002a767bff9e83f8eeecf883ecb8011875a21ae8da43bffb817a57e78cc09"
+
+[[package]]
+name = "syn"
+version = "1.0.99"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58dbef6ec655055e20b86b15a8cc6d439cca19b667537ac6a1369572d151ab13"
 dependencies = [
  "proc-macro2",
  "quote",
- "unicode-xid",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -550,16 +573,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f6906492a7cd215bfa4cf595b600146ccfac0c79bcbd1f3000162af5e8b06"
 
 [[package]]
-name = "unicode-xid"
-version = "0.2.2"
+name = "unicode-ident"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
-
-[[package]]
-name = "vec_map"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
+checksum = "dcc811dc4066ac62f84f11307873c4850cb653bfa9b1719cee2bd2204a4bc5dd"
 
 [[package]]
 name = "version_check"
@@ -572,3 +589,13 @@ name = "wasi"
 version = "0.10.2+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
+
+[[package]]
+name = "wide"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3aba2d1dac31ac7cae82847ac5b8be822aee8f99a4e100f279605016b185c5f"
+dependencies = [
+ "bytemuck",
+ "safe_arch",
+]

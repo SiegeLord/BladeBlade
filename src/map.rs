@@ -1245,7 +1245,7 @@ impl Map
 		if self.mouse_state[1] || self.mouse_state[2]
 		{
 			let (x, y) = self.mouse_pos;
-			if let Ok(mut target) = self.world.get_mut::<Target>(self.player)
+			if let Ok(mut target) = self.world.get::<&mut Target>(self.player)
 			{
 				let fx = -1. + 2. * x as f32 / self.display_width;
 				let fy = -1. + 2. * y as f32 / self.display_height;
@@ -1258,10 +1258,10 @@ impl Map
 			if self.mouse_state[2]
 			{
 				if let (Ok(position), Ok(mut stats), Ok(mut dash), Ok(mut mana)) = (
-					self.world.get_mut::<Position>(self.player),
-					self.world.get_mut::<Stats>(self.player),
-					self.world.get_mut::<Dash>(self.player),
-					self.world.get_mut::<Mana>(self.player),
+					self.world.get::<&mut Position>(self.player),
+					self.world.get::<&mut Stats>(self.player),
+					self.world.get::<&mut Dash>(self.player),
+					self.world.get::<&mut Mana>(self.player),
 				)
 				{
 					if stats.has_dash
@@ -1386,7 +1386,7 @@ impl Map
 		// velocity application
 		for (id, (position, velocity)) in self.world.query::<(&mut Position, &Velocity)>().iter()
 		{
-			if let Ok(time_to_move) = self.world.get::<TimeToMove>(id)
+			if let Ok(time_to_move) = self.world.get::<&TimeToMove>(id)
 			{
 				if time_to_move.time_to_move > state.time()
 				{
@@ -1414,7 +1414,7 @@ impl Map
 		}
 
 		// Aggro
-		if let Ok(player_pos) = self.world.get::<Position>(self.player)
+		if let Ok(player_pos) = self.world.get::<&Position>(self.player)
 		{
 			for (_id, (enemy, position, target, weapon, stats)) in self
 				.world
@@ -1529,9 +1529,9 @@ impl Map
 		// Bullet to player collision
 		let mut hits = vec![];
 		if let (Ok(player_pos), Ok(mut life), Ok(player_stats)) = (
-			self.world.get::<Position>(self.player),
-			self.world.get_mut::<Life>(self.player),
-			self.world.get::<Stats>(self.player),
+			self.world.get::<&Position>(self.player),
+			self.world.get::<&mut Life>(self.player),
+			self.world.get::<&Stats>(self.player),
 		)
 		{
 			for (id, (bullet, position, stats)) in
@@ -1562,12 +1562,12 @@ impl Map
 			Ok(mut mana),
 			Ok(position),
 		) = (
-			self.world.get_mut::<BladeBlade>(self.player),
-			self.world.get::<Stats>(self.player),
-			self.world.get_mut::<TimeToMove>(self.player),
-			self.world.get_mut::<Target>(self.player),
-			self.world.get_mut::<Mana>(self.player),
-			self.world.get_mut::<Position>(self.player),
+			self.world.get::<&mut BladeBlade>(self.player),
+			self.world.get::<&Stats>(self.player),
+			self.world.get::<&mut TimeToMove>(self.player),
+			self.world.get::<&mut Target>(self.player),
+			self.world.get::<&mut Mana>(self.player),
+			self.world.get::<&mut Position>(self.player),
 		)
 		{
 			if self.space_state
@@ -1667,10 +1667,10 @@ impl Map
 		// Enemy on death effects
 		let mut explosions = vec![];
 		if let (Ok(stats), Ok(mut life), Ok(mut mana), Ok(mut experience)) = (
-			self.world.get::<Stats>(self.player),
-			self.world.get_mut::<Life>(self.player),
-			self.world.get_mut::<Mana>(self.player),
-			self.world.get_mut::<Experience>(self.player),
+			self.world.get::<&Stats>(self.player),
+			self.world.get::<&mut Life>(self.player),
+			self.world.get::<&mut Mana>(self.player),
+			self.world.get::<&mut Experience>(self.player),
 		)
 		{
 			for (_, (enemy, position, enemy_stats, enemy_life)) in self
@@ -1852,7 +1852,7 @@ impl Map
 
 		// Cell changes
 		let mut new_cell_centers = vec![];
-		if let Ok(player_pos) = self.world.get::<Position>(self.player)
+		if let Ok(player_pos) = self.world.get::<&Position>(self.player)
 		{
 			let player_cell = Cell::world_to_cell(&player_pos.pos);
 
@@ -1868,7 +1868,7 @@ impl Map
 						if cell.contains(&position.pos)
 						{
 							to_die.push(id);
-							if self.world.get::<&Enemy>(id).is_ok()
+							if self.world.get::<&&Enemy>(id).is_ok()
 							{
 								num_enemies -= 1;
 							}
@@ -1935,7 +1935,7 @@ impl Map
 
 		// Recenter things around the player.
 		//~ let mut center = Point3::new(0., 0., 0.);
-		//~ if let Ok(player_pos) = self.world.get::<Position>(self.player)
+		//~ if let Ok(player_pos) = self.world.get::<&Position>(self.player)
 		//~ {
 		//~ center.x = player_pos.pos.x;
 		//~ center.z = player_pos.pos.z;
@@ -1956,7 +1956,7 @@ impl Map
 		//~ }
 
 		// Camera pos
-		if let Ok(player_pos) = self.world.get::<Position>(self.player)
+		if let Ok(player_pos) = self.world.get::<&Position>(self.player)
 		{
 			self.player_pos = player_pos.pos;
 		}
@@ -2001,7 +2001,7 @@ impl Map
 				KeyCode::Space => self.space_state = true,
 				KeyCode::P =>
 				{
-					if let Ok(mut experience) = self.world.get_mut::<Experience>(self.player)
+					if let Ok(mut experience) = self.world.get::<&mut Experience>(self.player)
 					{
 						experience.experience = level_to_experience(experience.level + 1);
 					}
@@ -2101,7 +2101,7 @@ impl Map
 		{
 			let rewards = &self.rewards[self.reward_selection as usize];
 
-			if let Ok(mut stats) = self.world.get_mut::<Stats>(self.player)
+			if let Ok(mut stats) = self.world.get::<&mut Stats>(self.player)
 			{
 				for reward in rewards
 				{
@@ -2425,8 +2425,8 @@ impl Map
 
 		let mut f = -1.;
 		if let (Ok(life), Ok(stats)) = (
-			self.world.get::<Life>(self.player),
-			self.world.get::<Stats>(self.player),
+			self.world.get::<&Life>(self.player),
+			self.world.get::<&Stats>(self.player),
 		)
 		{
 			f = 2. * (life.life / stats.max_life) - 1.;
@@ -2451,8 +2451,8 @@ impl Map
 
 		let mut f = -1.;
 		if let (Ok(mana), Ok(stats)) = (
-			self.world.get::<Mana>(self.player),
-			self.world.get::<Stats>(self.player),
+			self.world.get::<&Mana>(self.player),
+			self.world.get::<&Stats>(self.player),
 		)
 		{
 			f = 2. * (mana.mana / stats.max_mana) - 1.;
@@ -2473,7 +2473,7 @@ impl Map
 
 		// Experience
 
-		if let Ok(experience) = self.world.get::<Experience>(self.player)
+		if let Ok(experience) = self.world.get::<&Experience>(self.player)
 		{
 			let dx = self.display_width / 2.;
 			let dy = self.display_height - 64.;
@@ -2686,7 +2686,7 @@ impl Map
 
 			let mut level = 0;
 
-			if let Ok(experience) = self.world.get::<Experience>(self.player)
+			if let Ok(experience) = self.world.get::<&Experience>(self.player)
 			{
 				level = experience.level;
 			}
