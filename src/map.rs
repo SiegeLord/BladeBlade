@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::game_state::{GameState, NextScreen};
-use crate::spatial_grid::SpatialGrid;
+use crate::spatial_grid::{self, SpatialGrid};
 use crate::speech::get_speech;
 use crate::utils::{
 	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
@@ -1221,8 +1221,9 @@ impl Map
 		let center_y = cell_pos.y as f32 * CELL_SIZE as f32;
 
 		let mut collidable_grid = SpatialGrid::new(
-			Point2::new(center_x - radius, center_y - radius),
-			Point2::new(center_x + radius, center_y + radius),
+			(2. * radius / 128.) as usize,
+			(2. * radius / 128.) as usize,
+			128.,
 			128.,
 		);
 
@@ -1232,14 +1233,9 @@ impl Map
 			self.world.query::<(&Position, &Collision, &Stats)>().iter()
 		{
 			let stats = stats.apply_effects();
-			let pos = Point2::new(position.pos.x, position.pos.z);
+			let pos = Point2::new(position.pos.x - center_x, position.pos.z - center_y);
 			let disp = Vector2::new(stats.size, stats.size);
-			if collidable_grid.insert(id, pos - disp, pos + disp).is_err()
-			{
-				println!("Bad insertion? {:?}", id);
-				assert!(id != self.player);
-				to_die.push(id);
-			}
+			collidable_grid.push(spatial_grid::entry(pos - disp, pos + disp, id));
 		}
 
 		if self.mouse_state[1] || self.mouse_state[2]
@@ -1340,46 +1336,40 @@ impl Map
 			.query::<(&Position, &mut Velocity, &Collision, &Stats)>()
 			.iter()
 		{
-			let pos = Point2::new(position.pos.x, position.pos.z);
+			let pos = Point2::new(position.pos.x - center_x, position.pos.z - center_y);
 			let disp = Vector2::new(stats.size, stats.size);
 
-			if let Ok(query) = collidable_grid.query(pos - disp, pos + disp)
-			{
-				let mut res: Vec<_> = query.map(|v| v.clone())
-					.collect();
-				res.sort();
-				res.dedup();
+			let query = collidable_grid.query_rect(pos - disp, pos + disp, |_| true);
+			let mut res: Vec<_> = query.iter().map(|v| v.inner.clone())
+				.collect();
+			res.sort();
+			res.dedup();
 
-				for other_id in res
+			for other_id in res
+			{
+				if let Some((other_position, other_collision, other_stats)) = self
+					.world
+					.query_one::<(&Position, &Collision, &Stats)>(other_id)?
+					.get()
 				{
-					if let Some((other_position, other_collision, other_stats)) = self
-						.world
-						.query_one::<(&Position, &Collision, &Stats)>(other_id)?
-						.get()
+					if id == other_id
 					{
-						if id == other_id
-						{
-							continue;
-						}
-						if !collision.kind.collides_with(&other_collision.kind)
-						{
-							continue;
-						}
-						let min_dist = other_stats.size + stats.size;
-						let disp = position.pos - other_position.pos;
-						let dist = disp.norm();
-						if dist < min_dist
-						{
-							velocity.vel +=
-								200. * disp.normalize()
-									* max(2. * ((min_dist - dist) / min_dist).powf(2.), 1.);
-						}
+						continue;
+					}
+					if !collision.kind.collides_with(&other_collision.kind)
+					{
+						continue;
+					}
+					let min_dist = other_stats.size + stats.size;
+					let disp = position.pos - other_position.pos;
+					let dist = disp.norm();
+					if dist < min_dist
+					{
+						velocity.vel +=
+							200. * disp.normalize()
+								* max(2. * ((min_dist - dist) / min_dist).powf(2.), 1.);
 					}
 				}
-			}
-			else
-			{
-				println!("Bad query? {:?}", id);
 			}
 		}
 

@@ -3,6 +3,7 @@ use allegro::*;
 use allegro_audio::*;
 use allegro_color::*;
 use nalgebra;
+use nalgebra::{Point2, Vector2};
 use rand::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -196,4 +197,223 @@ pub fn load_obj(filename: &str) -> Result<Vec<[Point3<f32>; 2]>>
 		}
 	}
 	Ok(lines)
+}
+
+
+pub fn nearest_line_point(v1: Point2<f32>, v2: Point2<f32>, test_point: Point2<f32>)
+	-> Point2<f32>
+{
+	let v1_t = test_point - v1;
+
+	let v2_v1 = v2 - v1;
+	let v2_v1_norm_sq = max(v2_v1.norm_squared(), 1e-20);
+
+	let dot = v1_t.dot(&v2_v1) / v2_v1_norm_sq;
+
+	if dot < 0.
+	{
+		v1
+	}
+	else if dot > 1.
+	{
+		v2
+	}
+	else
+	{
+		v1 + dot * (v2 - v1)
+	}
+}
+
+pub fn nearest_poly_point(vs: &[Point2<f32>], test_point: Point2<f32>) -> Point2<f32>
+{
+	assert!(vs.len() >= 3);
+	let mut best_dist_sq = f32::INFINITY;
+	let mut best_point = Point2::new(0., 0.);
+
+	for idx in 0..vs.len()
+	{
+		let v1 = vs[idx];
+		let v2 = vs[(idx + 1) % vs.len()];
+
+		let cand_point = nearest_line_point(v1, v2, test_point);
+		let cand_dist_sq = (cand_point - test_point).norm_squared();
+		if cand_dist_sq < best_dist_sq
+		{
+			best_point = cand_point;
+			best_dist_sq = cand_dist_sq;
+		}
+	}
+	best_point
+}
+
+pub fn is_inside_poly(vs: &[Point2<f32>], test_point: Point2<f32>) -> bool
+{
+	// Clockwise.
+	assert!(vs.len() >= 3);
+	let mut inside = true;
+
+	for idx in 0..vs.len()
+	{
+		let v1 = vs[idx];
+		let v2 = vs[(idx + 1) % vs.len()];
+		let v1_v2 = v2 - v1;
+		let normal = Vector2::new(-v1_v2.y, v1_v2.x);
+
+		let v1_t = test_point - v1;
+		inside &= v1_t.dot(&normal) < 0.;
+		if !inside
+		{
+			return false;
+		}
+	}
+	true
+}
+
+// Stolen from ncollide.
+pub fn intersect_segment_segment(
+	start1: Point2<f32>, end1: Point2<f32>, start2: Point2<f32>, end2: Point2<f32>,
+) -> bool
+{
+	// Inspired by RealField-time collision detection by Christer Ericson.
+	let eps = 1e-3;
+	let d1 = end1 - start1;
+	let d2 = end2 - start2;
+	let r = start1 - start2;
+
+	let a = d1.norm_squared();
+	let e = d2.norm_squared();
+	let f = d2.dot(&r);
+
+	let mut s;
+	let mut t;
+	let parallel;
+
+	if a <= eps && e <= eps
+	{
+		s = 0.;
+		t = 0.;
+	}
+	else if a <= eps
+	{
+		s = 0.;
+		t = clamp(f / e, 0., 1.);
+	}
+	else
+	{
+		let c = d1.dot(&r);
+		if e <= eps
+		{
+			t = 0.;
+			s = clamp(-c / a, 0., 1.);
+		}
+		else
+		{
+			let b = d1.dot(&d2);
+			let ae = a * e;
+			let bb = b * b;
+			let denom = ae - bb;
+
+			parallel = denom <= eps || (ae / bb - 1.).abs() < eps;
+
+			// Use absolute and ulps error to test collinearity.
+			if !parallel
+			{
+				s = clamp((b * f - c * e) / denom, 0., 1.);
+			}
+			else
+			{
+				s = 0.;
+			}
+
+			t = (b * s + f) / e;
+
+			if t < 0.
+			{
+				t = 0.;
+				s = clamp(-c / a, 0., 1.);
+			}
+			else if t > 1.
+			{
+				t = 1.;
+				s = clamp((b - c) / a, 0., 1.);
+			}
+		}
+	}
+
+	let v1 = start1 + d1 * s;
+	let v2 = start2 + d2 * t;
+
+	//~ dbg!(v1, v2, (v1 - v2).norm_squared());
+
+	(v1 - v2).norm_squared() < eps
+}
+
+#[test]
+fn test_nearest_line_point()
+{
+	let v1 = Point2::new(1., 2.);
+	let v2 = Point2::new(3., 4.);
+
+	let t = Point2::new(-1., -1.);
+	let n = nearest_line_point(v1, v2, t);
+	assert!(n == v1);
+
+	let t = Point2::new(5., 5.);
+	let n = nearest_line_point(v1, v2, t);
+	assert!((n - v2).norm() < 1e-3);
+
+	let t = Point2::new(2., 3.);
+	let n = nearest_line_point(v1, v2, t);
+	dbg!(n, t);
+	assert!((n - t).norm() < 1e-3);
+
+	let t = Point2::new(1., 4.);
+	let n = nearest_line_point(v1, v2, t);
+	assert!((n - Point2::new(2., 3.)).norm() < 1e-3);
+}
+
+#[test]
+fn test_is_inside_poly()
+{
+	let vs = [
+		Point2::new(0., 0.),
+		Point2::new(0., 3.),
+		Point2::new(3., 3.),
+		Point2::new(3., 0.),
+	];
+
+	assert!(is_inside_poly(&vs, Point2::new(1., 1.)));
+	assert!(!is_inside_poly(&vs, Point2::new(-1., -1.)));
+
+	let vs = [
+		Point2::new(-1., 1.),
+		Point2::new(1., 3.),
+		Point2::new(4., -3.),
+		Point2::new(-1., -1.),
+	];
+	assert!(is_inside_poly(&vs, Point2::new(0., 0.)));
+}
+
+#[test]
+fn test_segment_segment()
+{
+	let start1 = Point2::new(0., 64.);
+	let end1 = Point2::new(0., 128.);
+
+	let start2 = Point2::new(0., 256.);
+	let end2 = Point2::new(0., 120.);
+
+	assert!(intersect_segment_segment(start1, end1, start2, end2));
+}
+
+#[test]
+fn test_segment_segment2()
+{
+	let start1 = Point2::new(0., 256.);
+	let end1 = Point2::new(15., 65.);
+
+	let start2 = Point2::new(-16., 208.);
+	let end2 = Point2::new(16., 208.);
+
+	assert!(intersect_segment_segment(start1, end1, start2, end2));
 }
