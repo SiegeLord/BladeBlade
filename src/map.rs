@@ -1725,8 +1725,8 @@ impl Map
 							reward_vec.push(reward);
 						}
 						
-						let positive_thresh = (10. * 1.15_f32.powi(experience.level)) as i32;
-						let negative_thresh = -(5. * 1.15_f32.powi(experience.level)) as i32;
+						let positive_thresh = (20. * 1.15_f32.powi(experience.level)) as i32;
+						let negative_thresh = -(10. * 1.15_f32.powi(experience.level)) as i32;
 						if total_value > positive_thresh || total_value < negative_thresh
 						{
 							continue 'restart;
