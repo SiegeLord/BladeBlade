@@ -157,6 +157,15 @@ pub fn load_config<T: DeserializeOwned + Clone>(file: &str) -> Result<T>
 		.map_err(|e| Error::new(format!("Config parsing error"), Some(Box::new(e))))
 }
 
+pub fn save_config<T: Serialize>(file: &str, val: T) -> Result<()>
+{
+	let element = to_element(&val)
+		.map_err(|e| Error::new(format!("Config writing error"), Some(Box::new(e))))?;
+	std::fs::write(file, format!("{}", element))
+		.map_err(|e| Error::new(format!("Couldn't write '{}'", file), Some(Box::new(e))))?;
+	Ok(())
+}
+
 pub fn load_bitmap(core: &Core, file: &str) -> Result<Bitmap>
 {
 	Ok(Bitmap::load(&core, file).map_err(|_| format!("Couldn't load {}", file))?)
@@ -198,7 +207,6 @@ pub fn load_obj(filename: &str) -> Result<Vec<[Point3<f32>; 2]>>
 	}
 	Ok(lines)
 }
-
 
 pub fn nearest_line_point(v1: Point2<f32>, v2: Point2<f32>, test_point: Point2<f32>)
 	-> Point2<f32>

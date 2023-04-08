@@ -3,9 +3,10 @@ use crate::game_state::{GameState, NextScreen};
 use crate::spatial_grid::{self, SpatialGrid};
 use crate::speech::get_speech;
 use crate::utils::{
-	camera_project, get_ground_from_screen, mat4_to_transform, max, min, projection_transform,
-	random_color, sigmoid, ColorExt, Vec2D, Vec3D, DT, PI, load_obj,
+	camera_project, get_ground_from_screen, load_obj, mat4_to_transform, max, min,
+	projection_transform, random_color, sigmoid, ColorExt, Vec2D, Vec3D, DT, PI,
 };
+use crate::{controls, ui};
 use allegro::*;
 use allegro_font::*;
 use allegro_primitives::*;
@@ -424,7 +425,8 @@ impl Cell
 								time_to_deaggro: 0.,
 								fire_delay: 1.,
 								name: name,
-								experience: (exp_bonus * 2000. * ((level + 1) as f32).powf(0.9)) as i32,
+								experience: (exp_bonus * 2000. * ((level + 1) as f32).powf(0.9))
+									as i32,
 								level: level,
 							},
 							Position {
@@ -976,8 +978,7 @@ enum State
 {
 	Normal,
 	LevelUp,
-	Restart,
-	Quit,
+	InMenu,
 }
 
 #[derive(Debug, Clone)]
@@ -1055,16 +1056,12 @@ pub struct Map
 	project: Perspective3<f32>,
 	display_width: f32,
 	display_height: f32,
-	mouse_state: [bool; 10],
 	mouse_pos: (i32, i32),
-	space_state: bool,
 
 	cells: Vec<Cell>,
 	ui_font: Font,
 
 	state: State,
-	old_state: State,
-	old_paused: bool,
 	selection_made: bool,
 	reward_selection: i32,
 	rewards: Vec<Vec<Reward>>,
@@ -1073,13 +1070,15 @@ pub struct Map
 	time_to_hide_dash: f64,
 
 	seed: u64,
-	
+
 	player_obj: Vec<[Point3<f32>; 2]>,
 	monster_obj: Vec<[Point3<f32>; 2]>,
 	bullet_obj: Vec<[Point3<f32>; 2]>,
 	hit_obj: Vec<[Point3<f32>; 2]>,
 	explosion_obj: Vec<[Point3<f32>; 2]>,
 	blade_obj: Vec<[Point3<f32>; 2]>,
+
+	subscreens: Vec<ui::SubScreen>,
 }
 
 impl Map
@@ -1143,7 +1142,8 @@ impl Map
 
 		state.cache_bitmap("data/face.png")?;
 		state.sfx.cache_sample("data/blade_blade.ogg")?;
-		state.sfx.cache_sample("data/ui.ogg")?;
+		state.sfx.cache_sample("data/ui1.ogg")?;
+		state.sfx.cache_sample("data/ui2.ogg")?;
 		state.sfx.cache_sample("data/hit.ogg")?;
 		state.sfx.cache_sample("data/blade_hit.ogg")?;
 		state.sfx.cache_sample("data/death.ogg")?;
@@ -1161,9 +1161,7 @@ impl Map
 			project: projection_transform(display_width, display_height),
 			display_width: display_width,
 			display_height: display_height,
-			mouse_state: [false; 10],
 			mouse_pos: (0, 0),
-			space_state: false,
 			cells: cells,
 			ui_font: state
 				.ttf
@@ -1172,8 +1170,6 @@ impl Map
 				.load_ttf_font("data/AvQest.ttf", 24, Flag::zero())
 				.map_err(|_| "Couldn't load 'data/AvQest.ttf'".to_string())?,
 			state: State::Normal,
-			old_state: State::Normal,
-			old_paused: false,
 			selection_made: false,
 			reward_selection: 0,
 			rewards: vec![],
@@ -1189,6 +1185,7 @@ impl Map
 			player_level: 1,
 			player_kills: 0,
 			player_blades: 0,
+			subscreens: vec![],
 		})
 	}
 
@@ -1238,7 +1235,9 @@ impl Map
 			collidable_grid.push(spatial_grid::entry(pos - disp, pos + disp, id));
 		}
 
-		if self.mouse_state[1] || self.mouse_state[2]
+		let want_move = state.controls.get_action_state(controls::Action::Move) > 0.5;
+		let want_dash = state.controls.get_action_state(controls::Action::Dash) > 0.5;
+		if want_move || want_dash
 		{
 			let (x, y) = self.mouse_pos;
 			if let Ok(mut target) = self.world.get::<&mut Target>(self.player)
@@ -1251,7 +1250,7 @@ impl Map
 				target.pos = Some(ground_pos);
 			}
 
-			if self.mouse_state[2]
+			if want_dash
 			{
 				if let (Ok(position), Ok(mut stats), Ok(mut dash), Ok(mut mana)) = (
 					self.world.get::<&mut Position>(self.player),
@@ -1340,8 +1339,7 @@ impl Map
 			let disp = Vector2::new(stats.size, stats.size);
 
 			let query = collidable_grid.query_rect(pos - disp, pos + disp, |_| true);
-			let mut res: Vec<_> = query.iter().map(|v| v.inner.clone())
-				.collect();
+			let mut res: Vec<_> = query.iter().map(|v| v.inner.clone()).collect();
 			res.sort();
 			res.dedup();
 
@@ -1560,7 +1558,7 @@ impl Map
 			self.world.get::<&mut Position>(self.player),
 		)
 		{
-			if self.space_state
+			if state.controls.get_action_state(controls::Action::Blade) > 0.5
 				&& state.time() > blade_blade.time_to_fire
 				&& mana.mana > stats.mana_cost
 			{
@@ -1724,7 +1722,7 @@ impl Map
 							}
 							reward_vec.push(reward);
 						}
-						
+
 						let positive_thresh = (20. * 1.15_f32.powi(experience.level)) as i32;
 						let negative_thresh = -(10. * 1.15_f32.powi(experience.level)) as i32;
 						if total_value > positive_thresh || total_value < negative_thresh
@@ -1864,7 +1862,7 @@ impl Map
 							}
 						}
 					}
-					//~ println!("Killed {}", cell.center);
+				//~ println!("Killed {}", cell.center);
 				}
 				else
 				{
@@ -1956,158 +1954,160 @@ impl Map
 
 	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<Option<NextScreen>>
 	{
-		let mut ret = None;
-		let mut apply_rewards = false;
-		match event
+		match self.state
 		{
-			Event::MouseButtonDown { button, x, y, .. } =>
+			State::Normal =>
 			{
-				self.mouse_pos = (*x, *y);
-				self.mouse_state[*button as usize] = true;
-				if self.state == State::LevelUp
+				state.controls.decode_event(event);
+				match event
 				{
-					self.selection_made = true;
-					let cx = self.display_width / 2.;
-					let cy = self.display_height / 2.;
+					Event::MouseButtonDown { x, y, .. } =>
+					{
+						self.mouse_pos = (*x, *y);
+					}
+					Event::MouseAxes { x, y, .. } =>
+					{
+						self.mouse_pos = (*x, *y);
+					}
+					Event::KeyDown { keycode, .. } =>
+					{
+						match *keycode
+						{
+							KeyCode::Escape =>
+							{
+								self.subscreens.push(ui::SubScreen::InGameMenu(
+									ui::InGameMenu::new(self.display_width, self.display_height),
+								));
+								self.state = State::InMenu;
+								state.paused = true;
+								state.sfx.play_sound("data/ui2.ogg")?;
+							}
+							_ => (),
+						}
+					}
+					_ => (),
+				}
+			}
+			State::LevelUp =>
+			{
+				let mut apply_rewards = false;
+				match event
+				{
+					Event::MouseButtonDown { x, y, .. } =>
+					{
+						self.mouse_pos = (*x, *y);
+						self.selection_made = true;
+						let cx = self.display_width / 2.;
+						let cy = self.display_height / 2.;
 
-					let dtheta = 2. * PI / 6.;
-					let mouse_theta =
-						(self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
-					self.reward_selection =
-						(6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
-					state.sfx.play_sound("data/ui.ogg")?;
+						let dtheta = 2. * PI / 6.;
+						let mouse_theta =
+							(self.mouse_pos.1 as f32 - cy).atan2(self.mouse_pos.0 as f32 - cx);
+						self.reward_selection =
+							(6 + ((mouse_theta + dtheta / 2.) / dtheta).floor() as i32) % 6;
+						state.sfx.play_sound("data/ui1.ogg")?;
+					}
+					Event::MouseAxes { x, y, .. } =>
+					{
+						self.mouse_pos = (*x, *y);
+					}
+					Event::KeyDown { keycode, .. } => match *keycode
+					{
+						KeyCode::Escape =>
+						{
+							self.selection_made = false;
+							state.sfx.play_sound("data/ui2.ogg")?;
+						}
+						KeyCode::Y =>
+						{
+							if self.selection_made
+							{
+								apply_rewards = true;
+								state.sfx.play_sound("data/ui1.ogg")?;
+							}
+						}
+						KeyCode::N =>
+						{
+							if self.selection_made
+							{
+								self.selection_made = false;
+								state.sfx.play_sound("data/ui2.ogg")?;
+							}
+						}
+						_ => (),
+					},
+					_ => (),
 				}
-			}
-			Event::MouseButtonUp { button, .. } =>
-			{
-				self.mouse_state[*button as usize] = false;
-			}
-			Event::MouseAxes { x, y, .. } =>
-			{
-				self.mouse_pos = (*x, *y);
-			}
-			Event::KeyDown { keycode, .. } => match *keycode
-			{
-				KeyCode::Space => self.space_state = true,
-				KeyCode::P =>
+				if apply_rewards
 				{
-					if let Ok(mut experience) = self.world.get::<&mut Experience>(self.player)
-					{
-						experience.experience = level_to_experience(experience.level + 1);
-					}
-				}
-				KeyCode::R =>
-				{
-					if self.state == State::Normal
-					{
-						state.paused = true;
-						self.old_state = self.state;
-						self.state = State::Restart;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-				}
-				KeyCode::Escape =>
-				{
-					if self.state == State::Quit
-					{
-						self.state = self.old_state;
-						state.paused = self.old_paused;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-					else if self.state == State::Restart
-					{
-						self.state = self.old_state;
-						state.paused = self.old_paused;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-					else if self.state == State::Normal
-					{
-						self.old_paused = state.paused;
-						self.old_state = self.state;
+					let rewards = &self.rewards[self.reward_selection as usize];
 
-						state.paused = true;
-						self.state = State::Quit;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-					else if self.state == State::LevelUp && self.selection_made
+					if let Ok(mut stats) = self.world.get::<&mut Stats>(self.player)
 					{
-						self.selection_made = false;
-						state.sfx.play_sound("data/ui.ogg")?;
+						for reward in rewards
+						{
+							reward.apply(&mut stats);
+						}
+						//~ dbg!(&*stats);
+						if stats.has_dash && self.time_to_hide_dash < 0.
+						{
+							self.time_to_hide_dash = state.time() + 5.;
+						}
 					}
-				}
-				KeyCode::Y =>
-				{
-					if self.state == State::Quit
-					{
-						ret = Some(NextScreen::Menu);
-						state.paused = false;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-					else if self.state == State::Restart
-					{
-						ret = Some(NextScreen::Game);
-						state.paused = false;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-					else if self.state == State::LevelUp && self.selection_made
-					{
-						apply_rewards = true;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-				}
-				KeyCode::N =>
-				{
-					if self.state == State::Quit
-					{
-						self.state = self.old_state;
-						state.paused = self.old_paused;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-					else if self.state == State::Restart
-					{
-						self.state = self.old_state;
-						state.paused = self.old_paused;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-					else if self.state == State::LevelUp && self.selection_made
-					{
-						self.selection_made = false;
-						state.sfx.play_sound("data/ui.ogg")?;
-					}
-				}
-				_ => (),
-			},
-			Event::KeyUp { keycode, .. } =>
-			{
-				if *keycode == KeyCode::Space
-				{
-					self.space_state = false;
+					self.state = State::Normal;
+					state.paused = false;
 				}
 			}
-			_ => (),
+			State::InMenu =>
+			{
+				if let Event::KeyDown {
+					keycode: KeyCode::Escape,
+					..
+				} = event
+				{
+					state.sfx.play_sound("data/ui2.ogg").unwrap();
+					self.subscreens.pop().unwrap();
+				}
+				if let Some(action) = self
+					.subscreens
+					.last_mut()
+					.and_then(|s| s.input(state, event))
+				{
+					match action
+					{
+						ui::Action::Forward(subscreen_fn) =>
+						{
+							self.subscreens.push(subscreen_fn(
+								state,
+								self.display_width,
+								self.display_height,
+							));
+						}
+						ui::Action::Back =>
+						{
+							self.subscreens.pop().unwrap();
+						}
+						ui::Action::Restart =>
+						{
+							state.paused = false;
+							return Ok(Some(NextScreen::Game));
+						}
+						ui::Action::MainMenu =>
+						{
+							state.paused = false;
+							return Ok(Some(NextScreen::Menu));
+						}
+						_ => (),
+					}
+				}
+				if self.subscreens.is_empty()
+				{
+					self.state = State::Normal;
+					state.paused = false;
+				}
+			}
 		}
-
-		if apply_rewards
-		{
-			let rewards = &self.rewards[self.reward_selection as usize];
-
-			if let Ok(mut stats) = self.world.get::<&mut Stats>(self.player)
-			{
-				for reward in rewards
-				{
-					reward.apply(&mut stats);
-				}
-				//~ dbg!(&*stats);
-				if stats.has_dash && self.time_to_hide_dash < 0.
-				{
-					self.time_to_hide_dash = state.time() + 5.;
-				}
-			}
-			self.state = State::Normal;
-			state.paused = false;
-		}
-
-		Ok(ret)
+		Ok(None)
 	}
 
 	fn make_camera(&self) -> Isometry3<f32>
@@ -2225,7 +2225,7 @@ impl Map
 			{
 				continue;
 			}
-			
+
 			let size = match drawable.kind
 			{
 				DrawKind::Explosion { start_time } =>
@@ -2235,22 +2235,23 @@ impl Map
 				_ => stats.size,
 			};
 
-			let color = match drawable.kind
-			{
-				DrawKind::Player => Color::from_rgb_f(1., 0.5, 1.),
-				DrawKind::AfterImage => Color::from_rgb_f(0.8, 0.8, 0.8),
-				DrawKind::Enemy(kind) => match kind
+			let color =
+				match drawable.kind
 				{
-					EnemyKind::Normal => Color::from_rgb_f(0., 1., 0.),
-					EnemyKind::Magic => Color::from_rgb_f(0.3, 0.3, 1.),
-					EnemyKind::Rare => Color::from_rgb_f(1., 1., 0.),
-				},
-				DrawKind::Bullet(f) => Color::from_rgb_f(0.2, 0.2, 1.)
-					.interpolate(Color::from_rgb_f(1., 1., 1.), f),
-				DrawKind::Hit => Color::from_rgb_f(1., 0.1, 0.1),
-				DrawKind::Explosion { .. } => Color::from_rgb_f(1., 0.5, 0.),
-			};
-			
+					DrawKind::Player => Color::from_rgb_f(1., 0.5, 1.),
+					DrawKind::AfterImage => Color::from_rgb_f(0.8, 0.8, 0.8),
+					DrawKind::Enemy(kind) => match kind
+					{
+						EnemyKind::Normal => Color::from_rgb_f(0., 1., 0.),
+						EnemyKind::Magic => Color::from_rgb_f(0.3, 0.3, 1.),
+						EnemyKind::Rare => Color::from_rgb_f(1., 1., 0.),
+					},
+					DrawKind::Bullet(f) => Color::from_rgb_f(0.2, 0.2, 1.)
+						.interpolate(Color::from_rgb_f(1., 1., 1.), f),
+					DrawKind::Hit => Color::from_rgb_f(1., 0.1, 0.1),
+					DrawKind::Explosion { .. } => Color::from_rgb_f(1., 0.5, 0.),
+				};
+
 			let obj = match drawable.kind
 			{
 				DrawKind::Player => &self.player_obj,
@@ -2258,9 +2259,9 @@ impl Map
 				DrawKind::Enemy(_) => &self.monster_obj,
 				DrawKind::Bullet(_) => &self.bullet_obj,
 				DrawKind::Hit => &self.hit_obj,
-				DrawKind::Explosion {..} => &self.explosion_obj,
+				DrawKind::Explosion { .. } => &self.explosion_obj,
 			};
-			
+
 			for line in obj
 			{
 				for vtx in line
@@ -2283,10 +2284,10 @@ impl Map
 
 			//~ for i in 0..40
 			//~ {
-				//~ for j in 0..2
-				//~ {
-					
-				//~ }
+			//~ for j in 0..2
+			//~ {
+
+			//~ }
 			//~ }
 		}
 
@@ -2311,7 +2312,7 @@ impl Map
 				let theta = theta.rem_euclid(2. * PI);
 
 				let color = Color::from_rgb_f(0.2, 1., 0.2);
-				
+
 				for line in &self.blade_obj
 				{
 					for vtx in line
@@ -2389,7 +2390,13 @@ impl Map
 				cx,
 				cy + 50.,
 				FontAlign::Centre,
-				"Press Space to activate Blade Blade",
+				&format!(
+					"Press {} to activate Blade Blade",
+					state
+						.options
+						.controls
+						.get_action_string(controls::Action::Blade)
+				),
 			);
 		}
 
@@ -2403,7 +2410,13 @@ impl Map
 				cx,
 				cy + 50.,
 				FontAlign::Centre,
-				"Press Right Mouse Button to Dash",
+				&format!(
+					"Press {} to Dash",
+					state
+						.options
+						.controls
+						.get_action_string(controls::Action::Dash)
+				),
 			);
 		}
 
@@ -2646,7 +2659,7 @@ impl Map
 				cx,
 				dy,
 				FontAlign::Centre,
-				"Your deeds of valor will be remembered (Esc/R)",
+				"Your deeds of valor will be remembered",
 			);
 		}
 
@@ -2747,43 +2760,17 @@ impl Map
 				get_speech(level, self.seed),
 			);
 		}
-		else if self.state == State::Quit
+
+		if let Some(subscreen) = self.subscreens.last()
 		{
 			state.prim.draw_filled_rectangle(
 				0.,
 				0.,
 				self.display_width,
 				self.display_height,
-				Color::from_rgba_f(0., 0., 0., 0.5),
+				Color::from_rgba_f(0., 0., 0., 0.7),
 			);
-
-			state.core.draw_text(
-				&self.ui_font,
-				Color::from_rgb_f(1., 1., 1.),
-				cx,
-				cy - lh / 2.,
-				FontAlign::Centre,
-				"Quit? (Y/N)",
-			);
-		}
-		else if self.state == State::Restart
-		{
-			state.prim.draw_filled_rectangle(
-				0.,
-				0.,
-				self.display_width,
-				self.display_height,
-				Color::from_rgba_f(0., 0., 0., 0.5),
-			);
-
-			state.core.draw_text(
-				&self.ui_font,
-				Color::from_rgb_f(1., 1., 1.),
-				cx,
-				cy - lh / 2.,
-				FontAlign::Centre,
-				"Restart? (Y/N)",
-			);
+			subscreen.draw(state);
 		}
 
 		Ok(())

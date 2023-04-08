@@ -2,20 +2,20 @@
 name = "BladeBlade"
 version = "0.1.0"
 authors = ["SiegeLord <slabode@aim.com>"]
-edition = "2018"
+edition = "2021"
 license = "GPL-3.0-only"
 
 [dependencies]
 
-allegro = { version="0.0.43" }
-allegro_dialog = { version="0.0.43" }
-allegro_image = { version="0.0.43" }
-allegro_font = { version="0.0.43" }
-allegro_ttf = { version="0.0.43" }
-allegro_acodec = { version="0.0.43" }
-allegro_audio = { version="0.0.43" }
-allegro_primitives = { version="0.0.43" }
-allegro_color = { version="0.0.43" }
+allegro = { version="0.0.44" }
+allegro_dialog = { version="0.0.44" }
+allegro_image = { version="0.0.44" }
+allegro_font = { version="0.0.44" }
+allegro_ttf = { version="0.0.44" }
+allegro_acodec = { version="0.0.44" }
+allegro_audio = { version="0.0.44" }
+allegro_primitives = { version="0.0.44" }
+allegro_color = { version="0.0.44" }
 
 hecs = "0.9.0"
 slr_config = "0.0.21"
@@ -23,7 +23,10 @@ nalgebra = "0.31.1"
 rand = "0.8.5"
 serde = "1.0.142"
 serde_derive = "1.0.142"
-obj-rs = "0.7.0"
+obj-rs = "0.7.1"
 
 [profile.release]
 debug = true
+
+[features]
+use_user_settings = []

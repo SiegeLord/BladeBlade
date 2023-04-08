@@ -18,19 +18,23 @@ pub struct Sfx
 	sample_instances: Vec<SampleInstance>,
 	exclusive_sounds: Vec<String>,
 	exclusive_instance: Option<SampleInstance>,
+	sfx_volume: f32,
+	music_volume: f32,
 
 	samples: HashMap<String, Sample>,
 }
 
 impl Sfx
 {
-	pub fn new(core: &Core) -> Result<Sfx>
+	pub fn new(sfx_volume: f32, music_volume: f32, core: &Core) -> Result<Sfx>
 	{
 		let audio = AudioAddon::init(&core)?;
 		let acodec = AcodecAddon::init(&audio)?;
 		let sink = Sink::new(&audio).map_err(|_| "Couldn't create audio sink".to_string())?;
 
 		Ok(Sfx {
+			sfx_volume: sfx_volume,
+			music_volume: music_volume,
 			audio: audio,
 			acodec: acodec,
 			sink: sink,
@@ -104,7 +108,7 @@ impl Sfx
 			.sink
 			.play_sample(
 				sample,
-				1.,
+				1. * self.sfx_volume,
 				None,
 				thread_rng().gen_range(0.9..1.1),
 				Playmode::Once,
@@ -119,7 +123,7 @@ impl Sfx
 	) -> Result<()>
 	{
 		self.cache_sample(name)?;
-		
+
 		if self.sample_instances.len() < 50
 		{
 			let sample = self.samples.get(name).unwrap();
@@ -156,7 +160,22 @@ impl Sfx
 				.map_err(|_| "Couldn't load a_different_reality_lagoona_remix.xm".to_string())?;
 		new_stream.attach(&mut self.sink).unwrap();
 		new_stream.set_playmode(Playmode::Loop).unwrap();
+		new_stream.set_gain(self.music_volume).unwrap();
 		self.stream = Some(new_stream);
 		Ok(())
+	}
+
+	pub fn set_music_volume(&mut self, new_volume: f32)
+	{
+		self.music_volume = new_volume;
+		if let Some(stream) = self.stream.as_mut()
+		{
+			stream.set_gain(new_volume).unwrap();
+		}
+	}
+
+	pub fn set_sfx_volume(&mut self, new_volume: f32)
+	{
+		self.sfx_volume = new_volume;
 	}
 }

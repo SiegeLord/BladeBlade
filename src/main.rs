@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 #![allow(unused_imports)]
 #![allow(dead_code)]
-#![feature(backtrace)]
 
+mod controls;
 mod error;
 mod game_state;
 mod map;
@@ -11,6 +11,7 @@ mod sfx;
 mod spatial_grid;
 mod speech;
 mod sprite;
+mod ui;
 mod utils;
 
 use crate::error::Result;
@@ -19,29 +20,17 @@ use crate::utils::{load_config, DT};
 use allegro::*;
 use allegro_dialog::*;
 use rand::prelude::*;
-use serde_derive::{Deserialize, Serialize};
 use std::rc::Rc;
-
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-struct Options
-{
-	fullscreen: bool,
-	width: i32,
-	height: i32,
-	play_music: bool,
-}
 
 fn real_main() -> Result<()>
 {
-	let options: Options = load_config("options.cfg")?;
-
 	let mut state = GameState::new()?;
-	if options.play_music
+	if state.options.play_music
 	{
 		state.sfx.play_music()?;
 	}
 
-	if options.fullscreen
+	if state.options.fullscreen
 	{
 		state.core.set_new_display_flags(FULLSCREEN_WINDOW);
 	}
@@ -51,7 +40,7 @@ fn real_main() -> Result<()>
 		16,
 		DisplayOptionImportance::Suggest,
 	);
-	let display = Display::new(&state.core, options.width, options.height)
+	let display = Display::new(&state.core, state.options.width, state.options.height)
 		.map_err(|_| "Couldn't create display".to_string())?;
 
 	let timer =
@@ -140,6 +129,7 @@ fn real_main() -> Result<()>
 				NextScreen::Menu =>
 				{
 					map = None;
+					menu.reset();
 				}
 				NextScreen::Quit =>
 				{
@@ -202,12 +192,16 @@ fn main()
 				.or_else(|| e.downcast_ref::<String>().map(|e| e.clone()))
 				.unwrap_or("Unknown error!".to_owned());
 
-			//~ error!("{}", err);
+			let mut lines = vec![];
+			for line in err.lines().take(10)
+			{
+				lines.push(line.to_string());
+			}
 			show_native_message_box(
 				None,
 				"Error!",
 				"An error has occurred!",
-				&err,
+				&lines.join("\n"),
 				Some("You make me sad."),
 				MESSAGEBOX_ERROR,
 			);

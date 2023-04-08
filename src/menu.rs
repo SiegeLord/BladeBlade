@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::game_state::{GameState, NextScreen};
 use crate::utils::{load_obj, PI};
+use crate::{controls, ui};
 use allegro::*;
 use allegro_font::*;
 use allegro_primitives::*;
@@ -12,8 +13,9 @@ pub struct Menu
 	display_width: f32,
 	display_height: f32,
 
-	ui_font: Font,
-	blade_obj: Vec<[Point3::<f32>; 2]>,
+	blade_obj: Vec<[Point3<f32>; 2]>,
+
+	subscreens: Vec<ui::SubScreen>,
 }
 
 impl Menu
@@ -22,17 +24,20 @@ impl Menu
 	{
 		state.cache_bitmap("data/logo.png")?;
 
-		state.sfx.cache_sample("data/ui.ogg")?;
+		state.sfx.cache_sample("data/ui1.ogg")?;
+		state.sfx.cache_sample("data/ui2.ogg")?;
 
 		Ok(Self {
 			display_width: display_width,
 			display_height: display_height,
-			ui_font: state
-				.ttf
-				.load_ttf_font("data/AvQest.ttf", 24, Flag::zero())
-				.map_err(|_| "Couldn't load 'data/AvQest.ttf'".to_string())?,
 			blade_obj: load_obj("data/blade.obj")?,
+			subscreens: vec![],
 		})
+	}
+
+	pub fn reset(&mut self)
+	{
+		self.subscreens.clear();
 	}
 
 	pub fn logic(&mut self, _state: &mut GameState) -> Result<()>
@@ -42,30 +47,80 @@ impl Menu
 
 	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<Option<NextScreen>>
 	{
-		let mut ret = None;
-		match event
+		if let Event::KeyDown {
+			keycode: KeyCode::Escape,
+			..
+		} = event
 		{
-			Event::MouseButtonDown { .. } =>
+			if self.subscreens.len() > 1
 			{
-				ret = Some(NextScreen::Game);
-				state.sfx.play_sound("data/ui.ogg")?;
+				state.sfx.play_sound("data/ui2.ogg").unwrap();
+				self.subscreens.pop().unwrap();
+				return Ok(None);
 			}
-			Event::KeyDown { keycode, .. } => match *keycode
-			{
-				KeyCode::Escape =>
-				{
-					ret = Some(NextScreen::Quit);
-				}
-				KeyCode::Space =>
-				{
-					ret = Some(NextScreen::Game);
-					state.sfx.play_sound("data/ui.ogg")?;
-				}
-				_ => (),
-			},
-			_ => (),
 		}
-		Ok(ret)
+
+		if self.subscreens.is_empty()
+		{
+			let mut open_menu = false;
+			match event
+			{
+				Event::MouseButtonUp { .. } =>
+				{
+					state.sfx.play_sound("data/ui1.ogg")?;
+					open_menu = true;
+				}
+				Event::KeyUp { keycode, .. } => match *keycode
+				{
+					KeyCode::Escape =>
+					{
+						state.sfx.play_sound("data/ui2.ogg")?;
+						return Ok(Some(NextScreen::Quit));
+					}
+					KeyCode::Space =>
+					{
+						state.sfx.play_sound("data/ui1.ogg")?;
+						open_menu = true;
+					}
+					_ => (),
+				},
+				_ => (),
+			}
+			if open_menu
+			{
+				self.subscreens
+					.push(ui::SubScreen::MainMenu(ui::MainMenu::new(
+						self.display_width,
+						self.display_height,
+					)));
+			}
+			return Ok(None);
+		}
+		else
+		{
+			if let Some(action) = self.subscreens.last_mut().unwrap().input(state, event)
+			{
+				match action
+				{
+					ui::Action::Forward(subscreen_fn) =>
+					{
+						self.subscreens.push(subscreen_fn(
+							state,
+							self.display_width,
+							self.display_height,
+						));
+					}
+					ui::Action::Start => return Ok(Some(NextScreen::Game)),
+					ui::Action::Quit => return Ok(Some(NextScreen::Quit)),
+					ui::Action::Back =>
+					{
+						self.subscreens.pop().unwrap();
+					}
+					_ => (),
+				}
+			}
+			return Ok(None);
+		}
 	}
 
 	pub fn draw(&self, state: &GameState) -> Result<()>
@@ -85,7 +140,7 @@ impl Menu
 
 			let theta = 2. * PI * (state.time() as f32 / speed) + offset;
 			let theta = theta.rem_euclid(2. * PI);
-			
+
 			for line in &self.blade_obj
 			{
 				for vtx in line
@@ -134,28 +189,35 @@ impl Menu
 			PrimType::LineList,
 		);
 
-		let bitmap = state.get_bitmap("data/logo.png").unwrap();
-		let bw = bitmap.get_width() as f32;
-		let bh = bitmap.get_height() as f32;
+		if self.subscreens.is_empty()
+		{
+			let bitmap = state.get_bitmap("data/logo.png").unwrap();
+			let bw = bitmap.get_width() as f32;
+			let bh = bitmap.get_height() as f32;
 
-		state.core.draw_tinted_bitmap(
-			bitmap,
-			color,
-			(cx - bw / 2.).floor(),
-			(cy - bh / 2.).floor(),
-			Flag::zero(),
-		);
+			state.core.draw_tinted_bitmap(
+				bitmap,
+				color,
+				(cx - bw / 2.).floor(),
+				(cy - bh / 2.).floor(),
+				Flag::zero(),
+			);
 
-		let c = 0.6 + 0.4 * 0.5 * ((5. * state.core.get_time()).sin() + 1.) as f32;
+			let c = 0.6 + 0.4 * 0.5 * ((5. * state.core.get_time()).sin() + 1.) as f32;
 
-		state.core.draw_text(
-			&self.ui_font,
-			Color::from_rgb_f(c, c, c),
-			cx,
-			cy + (bh / 2.).floor() + 16.,
-			FontAlign::Centre,
-			"Click To Start",
-		);
+			state.core.draw_text(
+				&state.ui_font,
+				Color::from_rgb_f(c, c, c),
+				cx,
+				cy + (bh / 2.).floor() + 16.,
+				FontAlign::Centre,
+				"Click To Start",
+			);
+		}
+		else
+		{
+			self.subscreens.last().unwrap().draw(state);
+		}
 
 		Ok(())
 	}
