@@ -1240,7 +1240,10 @@ impl Map
 		if want_move || want_dash
 		{
 			let (x, y) = self.mouse_pos;
-			if let Ok(mut target) = self.world.get::<&mut Target>(self.player)
+			if let (Ok(stats), Ok(mut target)) = (
+				self.world.get::<&Stats>(self.player),
+				self.world.get::<&mut Target>(self.player),
+			)
 			{
 				let fx = -1. + 2. * x as f32 / self.display_width;
 				let fy = -1. + 2. * y as f32 / self.display_height;
@@ -1954,40 +1957,36 @@ impl Map
 
 	pub fn input(&mut self, event: &Event, state: &mut GameState) -> Result<Option<NextScreen>>
 	{
+		state.controls.decode_event(event);
 		match self.state
 		{
-			State::Normal =>
+			State::Normal => match event
 			{
-				state.controls.decode_event(event);
-				match event
+				Event::MouseButtonDown { x, y, .. } =>
 				{
-					Event::MouseButtonDown { x, y, .. } =>
+					self.mouse_pos = (*x, *y);
+				}
+				Event::MouseAxes { x, y, .. } =>
+				{
+					self.mouse_pos = (*x, *y);
+				}
+				Event::KeyDown { keycode, .. } => match *keycode
+				{
+					KeyCode::Escape =>
 					{
-						self.mouse_pos = (*x, *y);
-					}
-					Event::MouseAxes { x, y, .. } =>
-					{
-						self.mouse_pos = (*x, *y);
-					}
-					Event::KeyDown { keycode, .. } =>
-					{
-						match *keycode
-						{
-							KeyCode::Escape =>
-							{
-								self.subscreens.push(ui::SubScreen::InGameMenu(
-									ui::InGameMenu::new(self.display_width, self.display_height),
-								));
-								self.state = State::InMenu;
-								state.paused = true;
-								state.sfx.play_sound("data/ui2.ogg")?;
-							}
-							_ => (),
-						}
+						self.subscreens
+							.push(ui::SubScreen::InGameMenu(ui::InGameMenu::new(
+								self.display_width,
+								self.display_height,
+							)));
+						self.state = State::InMenu;
+						state.paused = true;
+						state.sfx.play_sound("data/ui2.ogg")?;
 					}
 					_ => (),
-				}
-			}
+				},
+				_ => (),
+			},
 			State::LevelUp =>
 			{
 				let mut apply_rewards = false;
@@ -2060,14 +2059,6 @@ impl Map
 			}
 			State::InMenu =>
 			{
-				if let Event::KeyDown {
-					keycode: KeyCode::Escape,
-					..
-				} = event
-				{
-					state.sfx.play_sound("data/ui2.ogg").unwrap();
-					self.subscreens.pop().unwrap();
-				}
 				if let Some(action) = self
 					.subscreens
 					.last_mut()

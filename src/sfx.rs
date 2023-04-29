@@ -32,9 +32,9 @@ impl Sfx
 		let acodec = AcodecAddon::init(&audio)?;
 		let sink = Sink::new(&audio).map_err(|_| "Couldn't create audio sink".to_string())?;
 
-		Ok(Sfx {
-			sfx_volume: sfx_volume,
-			music_volume: music_volume,
+		let mut sfx = Sfx {
+			sfx_volume: 0.,
+			music_volume: 0.,
 			audio: audio,
 			acodec: acodec,
 			sink: sink,
@@ -43,7 +43,11 @@ impl Sfx
 			exclusive_instance: None,
 			exclusive_sounds: vec![],
 			samples: HashMap::new(),
-		})
+		};
+		sfx.set_sfx_volume(sfx_volume);
+		sfx.set_music_volume(music_volume);
+
+		Ok(sfx)
 	}
 
 	pub fn cache_sample<'l>(&'l mut self, name: &str) -> Result<&'l Sample>
@@ -87,7 +91,7 @@ impl Sfx
 					.sink
 					.play_sample(
 						sample,
-						1.,
+						self.sfx_volume,
 						None,
 						thread_rng().gen_range(0.9..1.1),
 						Playmode::Once,
@@ -108,7 +112,7 @@ impl Sfx
 			.sink
 			.play_sample(
 				sample,
-				1. * self.sfx_volume,
+				self.sfx_volume,
 				None,
 				thread_rng().gen_range(0.9..1.1),
 				Playmode::Once,
@@ -129,7 +133,7 @@ impl Sfx
 			let sample = self.samples.get(name).unwrap();
 
 			let dist = (sound_pos - camera_pos).norm();
-			let volume = clamp(50000. / (dist * dist), 0., 1.);
+			let volume = self.sfx_volume * clamp(50000. / (dist * dist), 0., 1.);
 			let pan = clamp((sound_pos.x - camera_pos.x) / 1000., -1., 1.);
 
 			let instance = self
@@ -167,15 +171,15 @@ impl Sfx
 
 	pub fn set_music_volume(&mut self, new_volume: f32)
 	{
-		self.music_volume = new_volume;
+		self.music_volume = 0.2 * new_volume;
 		if let Some(stream) = self.stream.as_mut()
 		{
-			stream.set_gain(new_volume).unwrap();
+			stream.set_gain(self.music_volume).unwrap();
 		}
 	}
 
 	pub fn set_sfx_volume(&mut self, new_volume: f32)
 	{
-		self.sfx_volume = new_volume;
+		self.sfx_volume = 0.2 * new_volume;
 	}
 }
