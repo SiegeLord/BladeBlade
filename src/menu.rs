@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::game_state::{GameState, NextScreen};
+use crate::game_state::{self, GameState, NextScreen};
 use crate::utils::{load_obj, PI};
 use crate::{controls, ui};
 use allegro::*;
@@ -218,6 +218,14 @@ impl Menu
 		{
 			self.subscreens.last().unwrap().draw(state);
 		}
+		state.core.draw_text(
+			&state.ui_font,
+			color,
+			32.,
+			self.display_height - 16. - state.ui_font.get_line_height() as f32,
+			FontAlign::Left,
+			&format!("Version: {}", game_state::VERSION),
+		);
 
 		Ok(())
 	}
