@@ -1054,8 +1054,6 @@ pub struct Map
 	player_kills: i32,
 	player_blades: i32,
 	project: Perspective3<f32>,
-	display_width: f32,
-	display_height: f32,
 	mouse_pos: (i32, i32),
 
 	cells: Vec<Cell>,
@@ -1083,9 +1081,7 @@ pub struct Map
 
 impl Map
 {
-	pub fn new(
-		state: &mut GameState, seed: u64, display_width: f32, display_height: f32,
-	) -> Result<Self>
+	pub fn new(state: &mut GameState, seed: u64) -> Result<Self>
 	{
 		let mut world = hecs::World::default();
 
@@ -1158,9 +1154,7 @@ impl Map
 			world: world,
 			player: player,
 			player_pos: player_pos,
-			project: projection_transform(display_width, display_height),
-			display_width: display_width,
-			display_height: display_height,
+			project: projection_transform(state.display_width, state.display_height),
 			mouse_pos: (0, 0),
 			cells: cells,
 			ui_font: state
@@ -1189,14 +1183,20 @@ impl Map
 		})
 	}
 
+	pub fn resize(&mut self, state: &GameState)
+	{
+		self.project = projection_transform(state.display_width, state.display_height);
+		self.subscreens = self.subscreens.iter().map(|s| s.remake(state)).collect();
+	}
+
 	pub fn logic(&mut self, state: &mut GameState) -> Result<()>
 	{
 		if self.state == State::LevelUp
 		{
 			if !self.selection_made
 			{
-				let cx = self.display_width / 2.;
-				let cy = self.display_height / 2.;
+				let cx = state.display_width / 2.;
+				let cy = state.display_height / 2.;
 
 				let dtheta = 2. * PI / 6.;
 				let mouse_theta =
@@ -1245,8 +1245,8 @@ impl Map
 				self.world.get::<&mut Target>(self.player),
 			)
 			{
-				let fx = -1. + 2. * x as f32 / self.display_width;
-				let fy = -1. + 2. * y as f32 / self.display_height;
+				let fx = -1. + 2. * x as f32 / state.display_width;
+				let fy = -1. + 2. * y as f32 / state.display_height;
 				let camera = self.make_camera();
 
 				let ground_pos = get_ground_from_screen(fx, -fy, self.project, camera);
@@ -1976,8 +1976,8 @@ impl Map
 					{
 						self.subscreens
 							.push(ui::SubScreen::InGameMenu(ui::InGameMenu::new(
-								self.display_width,
-								self.display_height,
+								state.display_width,
+								state.display_height,
 							)));
 						self.state = State::InMenu;
 						state.paused = true;
@@ -1996,8 +1996,8 @@ impl Map
 					{
 						self.mouse_pos = (*x, *y);
 						self.selection_made = true;
-						let cx = self.display_width / 2.;
-						let cy = self.display_height / 2.;
+						let cx = state.display_width / 2.;
+						let cy = state.display_height / 2.;
 
 						let dtheta = 2. * PI / 6.;
 						let mouse_theta =
@@ -2070,8 +2070,8 @@ impl Map
 						{
 							self.subscreens.push(subscreen_fn(
 								state,
-								self.display_width,
-								self.display_height,
+								state.display_width,
+								state.display_height,
 							));
 						}
 						ui::Action::Back =>
@@ -2359,7 +2359,7 @@ impl Map
 		// UI
 
 		let ortho_mat =
-			Matrix4::new_orthographic(0., self.display_width, self.display_height, 0., -1., 1.);
+			Matrix4::new_orthographic(0., state.display_width, state.display_height, 0., -1., 1.);
 
 		state
 			.core
@@ -2368,8 +2368,8 @@ impl Map
 		state.core.set_depth_test(None);
 
 		let lh = self.ui_font.get_line_height() as f32;
-		let cx = self.display_width / 2.;
-		let cy = self.display_height / 2.;
+		let cx = state.display_width / 2.;
+		let cy = state.display_height / 2.;
 
 		if state.time() < self.time_to_hide_intro
 		{
@@ -2415,7 +2415,7 @@ impl Map
 
 		let r = 125.;
 		let dx = r * 1.2;
-		let dy = self.display_height - r * 1.2;
+		let dy = state.display_height - r * 1.2;
 
 		let mut f = -1.;
 		if let (Ok(life), Ok(stats)) = (
@@ -2441,7 +2441,7 @@ impl Map
 
 		draw_orb(state, r, dx, dy, f, Color::from_rgb_f(0.7, 0.1, 0.1));
 
-		let dx = self.display_width - r * 1.2;
+		let dx = state.display_width - r * 1.2;
 
 		let mut f = -1.;
 		if let (Ok(mana), Ok(stats)) = (
@@ -2469,10 +2469,10 @@ impl Map
 
 		if let Ok(experience) = self.world.get::<&Experience>(self.player)
 		{
-			let dx = self.display_width / 2.;
-			let dy = self.display_height - 64.;
+			let dx = state.display_width / 2.;
+			let dy = state.display_height - 64.;
 
-			let w = self.display_width - r * 5.;
+			let w = state.display_width - r * 5.;
 			let h = 16.;
 
 			let old_breakpoint = level_to_experience(experience.level) as f32;
@@ -2510,8 +2510,8 @@ impl Map
 		draw_orb(state, r, dx, dy, f, Color::from_rgb_f(0.1, 0.1, 0.7));
 
 		let (x, y) = self.mouse_pos;
-		let fx = -1. + 2. * x as f32 / self.display_width;
-		let fy = -1. + 2. * y as f32 / self.display_height;
+		let fx = -1. + 2. * x as f32 / state.display_width;
+		let fy = -1. + 2. * y as f32 / state.display_height;
 		let ground_pos = get_ground_from_screen(fx, -fy, self.project, camera);
 
 		// Enemy health bar
@@ -2543,7 +2543,7 @@ impl Map
 
 				let w = 400.;
 				let h = 32.;
-				let dx = self.display_width / 2. - w / 2.;
+				let dx = state.display_width / 2. - w / 2.;
 				let dy = 32.;
 
 				state.prim.draw_rectangle(
@@ -2567,7 +2567,7 @@ impl Map
 				state.core.draw_text(
 					&self.ui_font,
 					Color::from_rgb_f(1., 1., 1.),
-					self.display_width / 2.,
+					state.display_width / 2.,
 					dy,
 					FontAlign::Centre,
 					&enemy.name,
@@ -2576,7 +2576,7 @@ impl Map
 				state.core.draw_text(
 					&self.ui_font,
 					Color::from_rgb_f(1., 1., 1.),
-					self.display_width / 2.,
+					state.display_width / 2.,
 					dy + lh * 1.2,
 					FontAlign::Centre,
 					&format!("Level: {}", enemy.level),
@@ -2587,7 +2587,7 @@ impl Map
 					state.core.draw_text(
 						&self.ui_font,
 						Color::from_rgb_f(1., 1., 1.),
-						self.display_width / 2.,
+						state.display_width / 2.,
 						dy + lh * 1.2 + lh * 1.2 * (i + 1) as f32,
 						FontAlign::Centre,
 						effect.kind.description(),
@@ -2601,8 +2601,8 @@ impl Map
 			state.prim.draw_filled_rectangle(
 				0.,
 				0.,
-				self.display_width,
-				self.display_height,
+				state.display_width,
+				state.display_height,
 				Color::from_rgba_f(0., 0., 0., 0.5),
 			);
 
@@ -2661,8 +2661,8 @@ impl Map
 			state.prim.draw_filled_rectangle(
 				0.,
 				0.,
-				self.display_width,
-				self.display_height,
+				state.display_width,
+				state.display_height,
 				Color::from_rgba_f(0., 0., 0., 0.7),
 			);
 
@@ -2757,8 +2757,8 @@ impl Map
 			state.prim.draw_filled_rectangle(
 				0.,
 				0.,
-				self.display_width,
-				self.display_height,
+				state.display_width,
+				state.display_height,
 				Color::from_rgba_f(0., 0., 0., 0.7),
 			);
 			subscreen.draw(state);

@@ -10,9 +10,6 @@ use nalgebra as na;
 
 pub struct Menu
 {
-	display_width: f32,
-	display_height: f32,
-
 	blade_obj: Vec<[Point3<f32>; 2]>,
 
 	subscreens: Vec<ui::SubScreen>,
@@ -20,7 +17,7 @@ pub struct Menu
 
 impl Menu
 {
-	pub fn new(state: &mut GameState, display_width: f32, display_height: f32) -> Result<Self>
+	pub fn new(state: &mut GameState) -> Result<Self>
 	{
 		state.cache_bitmap("data/logo.png")?;
 
@@ -28,11 +25,14 @@ impl Menu
 		state.sfx.cache_sample("data/ui2.ogg")?;
 
 		Ok(Self {
-			display_width: display_width,
-			display_height: display_height,
 			blade_obj: load_obj("data/blade.obj")?,
 			subscreens: vec![],
 		})
+	}
+
+	pub fn resize(&mut self, state: &GameState)
+	{
+		self.subscreens = self.subscreens.iter().map(|s| s.remake(state)).collect();
 	}
 
 	pub fn reset(&mut self)
@@ -90,8 +90,8 @@ impl Menu
 			{
 				self.subscreens
 					.push(ui::SubScreen::MainMenu(ui::MainMenu::new(
-						self.display_width,
-						self.display_height,
+						state.display_width,
+						state.display_height,
 					)));
 			}
 			return Ok(None);
@@ -106,8 +106,8 @@ impl Menu
 					{
 						self.subscreens.push(subscreen_fn(
 							state,
-							self.display_width,
-							self.display_height,
+							state.display_width,
+							state.display_height,
 						));
 					}
 					ui::Action::Start => return Ok(Some(NextScreen::Game)),
@@ -126,8 +126,8 @@ impl Menu
 	pub fn draw(&self, state: &GameState) -> Result<()>
 	{
 		let num_blades = 35;
-		let cx = self.display_width / 2.;
-		let cy = self.display_height / 2.;
+		let cx = state.display_width / 2.;
+		let cy = state.display_height / 2.;
 
 		let color = Color::from_rgb_f(0.2, 1., 0.2);
 
@@ -222,7 +222,7 @@ impl Menu
 			&state.ui_font,
 			color,
 			32.,
-			self.display_height - 16. - state.ui_font.get_line_height() as f32,
+			state.display_height - 16. - state.ui_font.get_line_height() as f32,
 			FontAlign::Left,
 			&format!("Version: {}", game_state::VERSION),
 		);

@@ -98,6 +98,8 @@ pub struct GameState
 	pub paused: bool,
 	pub sfx: Sfx,
 	pub ui_font: Font,
+	pub display_width: f32,
+	pub display_height: f32,
 
 	bitmaps: HashMap<String, Bitmap>,
 	pub options: Options,
@@ -137,6 +139,8 @@ impl GameState
 			bitmaps: HashMap::new(),
 			font: font,
 			ui_font: ui_font,
+			display_width: 0.,
+			display_height: 0.,
 			ttf: ttf,
 			sfx: sfx,
 			paused: false,

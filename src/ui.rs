@@ -1238,4 +1238,29 @@ impl SubScreen
 			SubScreen::InGameMenu(s) => s.input(state, event),
 		}
 	}
+
+	pub fn remake(&self, state: &game_state::GameState) -> Self
+	{
+		match self
+		{
+			SubScreen::MainMenu(_) =>
+			{
+				SubScreen::MainMenu(MainMenu::new(state.display_width, state.display_height))
+			}
+			SubScreen::ControlsMenu(_) => SubScreen::ControlsMenu(ControlsMenu::new(
+				state,
+				state.display_width,
+				state.display_height,
+			)),
+			SubScreen::OptionsMenu(_) => SubScreen::OptionsMenu(OptionsMenu::new(
+				state,
+				state.display_width,
+				state.display_height,
+			)),
+			SubScreen::InGameMenu(_) =>
+			{
+				SubScreen::InGameMenu(InGameMenu::new(state.display_width, state.display_height))
+			}
+		}
+	}
 }

@@ -42,6 +42,8 @@ fn real_main() -> Result<()>
 	);
 	let display = Display::new(&state.core, state.options.width, state.options.height)
 		.map_err(|_| "Couldn't create display".to_string())?;
+	state.display_width = display.get_width() as f32;
+	state.display_height = display.get_width() as f32;
 
 	let timer =
 		Timer::new(&state.core, DT as f64).map_err(|_| "Couldn't create timer".to_string())?;
@@ -67,19 +69,30 @@ fn real_main() -> Result<()>
 	let mut draw = true;
 	let mut rng = thread_rng();
 
-	let mut menu = menu::Menu::new(
-		&mut state,
-		display.get_width() as f32,
-		display.get_height() as f32,
-	)?;
+	let mut menu = menu::Menu::new(&mut state)?;
 	let mut map: Option<map::Map> = None;
 	let mut logics_without_draw = 0;
+	let mut old_fullscreen = state.options.fullscreen;
 
 	timer.start();
 	while !quit
 	{
 		if draw && queue.is_empty()
 		{
+			if state.display_width != display.get_width() as f32
+				|| state.display_height != display.get_height() as f32
+			{
+				state.display_width = display.get_width() as f32;
+				state.display_height = display.get_height() as f32;
+				if let Some(map) = &mut map
+				{
+					map.resize(&state);
+				}
+				else
+				{
+					menu.resize(&state);
+				}
+			}
 			//~ let start = state.core.get_time();
 			state.core.set_target_bitmap(Some(display.get_backbuffer()));
 			state.core.clear_to_color(Color::from_rgb_f(0., 0., 0.2));
@@ -119,12 +132,7 @@ fn real_main() -> Result<()>
 			{
 				NextScreen::Game =>
 				{
-					map = Some(map::Map::new(
-						&mut state,
-						rng.gen_range(0..16000),
-						display.get_width() as f32,
-						display.get_height() as f32,
-					)?);
+					map = Some(map::Map::new(&mut state, rng.gen_range(0..16000))?);
 				}
 				NextScreen::Menu =>
 				{
@@ -164,6 +172,11 @@ fn real_main() -> Result<()>
 					menu.logic(&mut state)?;
 				}
 				state.sfx.update_sounds()?;
+				if old_fullscreen != state.options.fullscreen
+				{
+					display.set_flag(FULLSCREEN_WINDOW, state.options.fullscreen);
+					old_fullscreen = state.options.fullscreen;
+				}
 
 				if !state.paused
 				{
