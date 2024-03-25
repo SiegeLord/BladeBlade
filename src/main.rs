@@ -30,10 +30,12 @@ fn real_main() -> Result<()>
 		state.sfx.play_music()?;
 	}
 
+	let mut flags = RESIZABLE;
 	if state.options.fullscreen
 	{
-		state.core.set_new_display_flags(FULLSCREEN_WINDOW);
+		flags = flags | FULLSCREEN_WINDOW;
 	}
+	state.core.set_new_display_flags(flags);
 
 	state.core.set_new_display_option(
 		DisplayOption::DepthSize,
@@ -183,6 +185,15 @@ fn real_main() -> Result<()>
 					state.tick += 1;
 				}
 				draw = true;
+			}
+			Event::DisplayResize { .. } =>
+			{
+				display
+					.acknowledge_resize()
+					.map_err(|_| "Failed to resize display.".to_string())?;
+				state.options.width = display.get_width();
+				state.options.height = display.get_height();
+				game_state::save_options(&state.core, &state.options).unwrap();
 			}
 			_ => (),
 		}
