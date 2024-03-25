@@ -1155,7 +1155,10 @@ impl Map
 			player: player,
 			player_pos: player_pos,
 			project: projection_transform(state.display_width, state.display_height),
-			mouse_pos: (0, 0),
+			mouse_pos: (
+				state.display_width as i32 / 2,
+				state.display_height as i32 / 2,
+			),
 			cells: cells,
 			ui_font: state
 				.ttf
