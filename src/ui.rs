@@ -100,6 +100,14 @@ impl Button
 						return Some(self.action.clone());
 					}
 				}
+				KeyCode::Escape =>
+				{
+					if self.action == Action::Back
+					{
+						state.sfx.play_sound("data/ui2.ogg").unwrap();
+						return Some(self.action.clone());
+					}
+				}
 				_ => (),
 			},
 			Event::MouseButtonUp { x, y, .. } =>
